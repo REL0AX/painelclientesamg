@@ -1,11 +1,18 @@
+import { lazy, Suspense } from 'react';
 import { BellRing, Cloud, LayoutGrid, MoonStar, RouteIcon, Settings2, SunMedium, Upload, Package2, Plus } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAppContext } from '@/app/state/AppContext';
-import { ClientDrawer } from '@/features/client360/ClientDrawer';
-import { GlobalClientOmnibox } from '@/features/search/GlobalClientOmnibox';
 import { Button } from '@/shared/ui/Button';
 import { Badge } from '@/shared/ui/Badge';
 import { cn, formatDateTime } from '@/shared/lib/utils';
+
+const GlobalClientOmnibox = lazy(() =>
+  import('@/features/search/GlobalClientOmnibox').then((module) => ({ default: module.GlobalClientOmnibox }))
+);
+
+const ClientDrawer = lazy(() =>
+  import('@/features/client360/ClientDrawer').then((module) => ({ default: module.ClientDrawer }))
+);
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutGrid },
@@ -26,6 +33,7 @@ export function AppShell() {
     theme,
     setTheme,
     createClient,
+    selectedClientId,
     toasts,
     dismissToast
   } = useAppContext();
@@ -95,7 +103,16 @@ export function AppShell() {
           <header className="rounded-[32px] border border-[var(--line)] bg-[var(--panel)] p-4 shadow-[0_28px_90px_rgba(15,23,42,0.08)] backdrop-blur">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-center">
-                <GlobalClientOmnibox />
+                <Suspense
+                  fallback={
+                    <div className="flex w-full max-w-2xl items-center gap-3 rounded-[28px] border border-[var(--line)] bg-white/90 px-4 py-3 shadow-sm">
+                      <span className="h-4 w-4 rounded-full bg-[var(--panel-subtle)]" />
+                      <span className="text-sm text-[var(--ink-500)]">Carregando busca global...</span>
+                    </div>
+                  }
+                >
+                  <GlobalClientOmnibox />
+                </Suspense>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <select
                     value={selectedYear}
@@ -169,7 +186,11 @@ export function AppShell() {
         ))}
       </div>
 
-      <ClientDrawer />
+      {selectedClientId ? (
+        <Suspense fallback={null}>
+          <ClientDrawer />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

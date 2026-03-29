@@ -1,12 +1,13 @@
 import { Search } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
 import { useAppContext } from '@/app/state/AppContext';
+import { useClientSearchResults } from '@/features/search/useClientSearchResults';
 import { clientSignals } from '@/shared/lib/analytics';
 import { Badge } from '@/shared/ui/Badge';
 
 export function GlobalClientOmnibox() {
-  const { globalSearch, setGlobalSearch, searchResults, openClient, snapshot, selectedYear, selectedMonth } =
-    useAppContext();
+  const { globalSearch, setGlobalSearch, openClient, snapshot, selectedYear, selectedMonth } = useAppContext();
+  const searchResults = useClientSearchResults();
   const [focused, setFocused] = useState(false);
   const deferredSearch = useDeferredValue(globalSearch);
   const visibleResults = deferredSearch ? searchResults.slice(0, 6) : [];

@@ -18,32 +18,12 @@ import {
   writeBatch,
   type Firestore
 } from 'firebase/firestore';
-import { PANEL_ID } from '@/shared/lib/constants';
+import { cloudServicesReady, firebaseConfig, panelCloudConfig } from '@/shared/lib/cloud-config';
 import { normalizeSnapshot } from '@/shared/lib/normalize';
 import type { AppSnapshot, CloudUser } from '@/shared/types/domain';
 
-export const firebaseConfig = {
-  apiKey: 'AIzaSyCixIjP1Ch9wuc2z96IQjGCA4PK3JPUveM',
-  authDomain: 'painelclientesamg.firebaseapp.com',
-  projectId: 'painelclientesamg',
-  storageBucket: 'painelclientesamg.firebasestorage.app',
-  messagingSenderId: '393496619335',
-  appId: '1:393496619335:web:1b5900b54df4ae89704462'
-};
-
-export const panelCloudConfig = {
-  enabled: true,
-  panelId: PANEL_ID,
-  authMode: 'email-password',
-  useEmulators: false,
-  autoUploadLocalDataOnFirstLogin: true
-} as const;
-
 let authInstance: Auth | null = null;
 let dbInstance: Firestore | null = null;
-
-export const isFirebaseConfigured = () =>
-  Boolean(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId);
 
 const ensureServices = () => {
   if (authInstance && dbInstance) {
@@ -63,8 +43,6 @@ const ensureServices = () => {
 
   return { auth: authInstance, db: dbInstance };
 };
-
-export const cloudServicesReady = () => panelCloudConfig.enabled && isFirebaseConfigured();
 
 export const subscribeToCloudAuth = (callback: (user: CloudUser | null) => void) => {
   if (!cloudServicesReady()) {

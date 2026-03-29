@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useAppContext } from '@/app/state/AppContext';
+import { useBackups } from '@/features/settings/useBackups';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { FieldLabel, Input, Textarea } from '@/shared/ui/Field';
@@ -13,7 +14,6 @@ export function SettingsPage() {
     updateSettings,
     saveBackup,
     exportBackup,
-    backups,
     deleteBackup,
     restoreBackup,
     clearAllData,
@@ -21,6 +21,7 @@ export function SettingsPage() {
     logoutCloud,
     syncNow
   } = useAppContext();
+  const backups = useBackups();
   const [email, setEmail] = useState('admin@admin.com.br');
   const [password, setPassword] = useState('');
   const [brackets, setBrackets] = useState<MonthlyCommercialBracket[]>(snapshot.settings.commercialBrackets);

@@ -1,12 +1,14 @@
 import { useDeferredValue, useState } from 'react';
 import { useAppContext } from '@/app/state/AppContext';
+import { useClientSearchResults } from '@/features/search/useClientSearchResults';
 import { clientSignals } from '@/shared/lib/analytics';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { FieldLabel, Input, Select } from '@/shared/ui/Field';
 import { ClientListItem } from '@/features/clients/ClientListItem';
 
 export function ClientsPage() {
-  const { searchResults, snapshot, selectedYear, selectedMonth } = useAppContext();
+  const { snapshot, selectedYear, selectedMonth } = useAppContext();
+  const searchResults = useClientSearchResults();
   const [routeFilter, setRouteFilter] = useState('all');
   const [signalFilter, setSignalFilter] = useState('all');
   const [nameFilter, setNameFilter] = useState('');

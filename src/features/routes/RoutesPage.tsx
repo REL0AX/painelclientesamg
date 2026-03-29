@@ -20,7 +20,6 @@ const emptyRouteForm = {
 export function RoutesPage() {
   const {
     snapshot,
-    clients,
     selectedYear,
     selectedMonth,
     saveRoute,
@@ -44,7 +43,7 @@ export function RoutesPage() {
     snapshot.settings.timezone
   );
   const monthKey = monthKeyFor(commercialContext.year, commercialContext.month);
-  const routeClients = clients.filter((client) => client.route?.id === selectedRoute?.id);
+  const routeClients = snapshot.clients.filter((client) => client.route?.id === selectedRoute?.id);
   const routeDates = selectedRoute ? snapshot.routeDates[selectedRoute.id] : null;
 
   useEffect(() => {
@@ -122,7 +121,7 @@ export function RoutesPage() {
                     </p>
                   </div>
                   <div className="rounded-full bg-[var(--panel-subtle)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-700)]">
-                    {routeClients.filter((client) => client.route?.id === route.id).length} clientes
+                    {snapshot.clients.filter((client) => client.route?.id === route.id).length} clientes
                   </div>
                 </div>
               </button>

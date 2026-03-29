@@ -1,5 +1,6 @@
 import { ArrowUpRight, BadgeAlert, CalendarClock, ChartNoAxesCombined, Users } from 'lucide-react';
 import { useAppContext } from '@/app/state/AppContext';
+import { useDashboardInsights } from '@/features/dashboard/useDashboardInsights';
 import { ClientListItem } from '@/features/clients/ClientListItem';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { StatCard } from '@/shared/ui/StatCard';
@@ -7,7 +8,8 @@ import { Card } from '@/shared/ui/Card';
 import { formatCurrency, formatDateTime } from '@/shared/lib/utils';
 
 export function DashboardPage() {
-  const { summary, worklists, snapshot } = useAppContext();
+  const { snapshot } = useAppContext();
+  const { summary, worklists } = useDashboardInsights();
 
   return (
     <div className="space-y-6">

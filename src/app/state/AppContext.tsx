@@ -7,35 +7,15 @@ import {
   useState,
   type PropsWithChildren
 } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { persistBackup } from '@/shared/lib/backup';
-import { dashboardSummary, searchClients, worklistsForSnapshot } from '@/shared/lib/analytics';
-import { commercialProfileForClient, resolveCommercialContext } from '@/shared/lib/commercial';
-import { panelDb, loadSnapshotFromDb, saveSnapshotToDb } from '@/shared/lib/db';
-import {
-  checkPanelAdminAccess,
-  cloudServicesReady,
-  loadCloudSnapshot,
-  loginToCloud,
-  logoutFromCloud,
-  panelCloudConfig,
-  saveCloudSnapshot,
-  subscribeToCloudAuth
-} from '@/shared/lib/firebase';
+import { cloudServicesReady, panelCloudConfig } from '@/shared/lib/cloud-config';
 import { createImportHistoryEntry } from '@/shared/lib/imports';
 import { readLegacySnapshot, readStoredTheme, writeStoredTheme } from '@/shared/lib/legacy';
 import { createEmptySnapshot, normalizeSnapshot, snapshotHasData } from '@/shared/lib/normalize';
-import { decorateClientsWithRoutes } from '@/shared/lib/routes';
-import { routeDepartureInfo } from '@/shared/lib/routes';
+import { decorateClientsWithRoutes, routeDepartureInfo } from '@/shared/lib/routes';
 import { createId, deepClone, formatDateTime, monthKeyFor } from '@/shared/lib/utils';
-import {
-  buildWhatsAppLink,
-  renderWhatsAppMessage
-} from '@/shared/lib/whatsapp';
 import type {
   AppSettings,
   AppSnapshot,
-  BackupRecord,
   Client,
   CloudSyncStatus,
   ContactChannel,
@@ -65,11 +45,6 @@ interface AppContextValue {
   selectedClientId: string | null;
   cloud: CloudSyncStatus;
   toasts: ToastMessage[];
-  backups: BackupRecord[];
-  clients: Client[];
-  searchResults: Client[];
-  summary: ReturnType<typeof dashboardSummary>;
-  worklists: ReturnType<typeof worklistsForSnapshot>;
   setTheme: (theme: ThemeMode) => void;
   setSelectedYear: (year: number) => void;
   setSelectedMonth: (month: number | null) => void;
@@ -105,6 +80,12 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+const loadDbModule = () => import('@/shared/lib/db');
+const loadBackupModule = () => import('@/shared/lib/backup');
+const loadCloudModule = () => import('@/shared/lib/firebase');
+const loadCommercialModule = () => import('@/shared/lib/commercial');
+const loadWhatsAppModule = () => import('@/shared/lib/whatsapp');
+
 const createCloudState = (): CloudSyncStatus => ({
   enabled: panelCloudConfig.enabled,
   ready: cloudServicesReady(),
@@ -137,22 +118,27 @@ export function AppProvider({ children }: PropsWithChildren) {
   const snapshotRef = useRef(snapshot);
   const skipNextCloudSyncRef = useRef(true);
 
-  const backups = useLiveQuery<BackupRecord[]>(
-    () => panelDb.backups.orderBy('createdAt').reverse().toArray(),
-    []
-  );
-
   useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
 
+  const loadLocalSnapshot = async () => {
+    const { loadSnapshotFromDb } = await loadDbModule();
+    return loadSnapshotFromDb();
+  };
+
+  const persistSnapshotLocally = async (nextSnapshot: AppSnapshot) => {
+    const { saveSnapshotToDb } = await loadDbModule();
+    await saveSnapshotToDb(nextSnapshot);
+  };
+
   useEffect(() => {
     const boot = async () => {
-      const fromDb = await loadSnapshotFromDb();
+      const fromDb = await loadLocalSnapshot();
       const fromLegacy = fromDb ? null : readLegacySnapshot();
       const hydrated = prepareSnapshot(fromDb ?? fromLegacy ?? createEmptySnapshot());
       if (!fromDb && fromLegacy) {
-        await saveSnapshotToDb(hydrated);
+        await persistSnapshotLocally(hydrated);
       }
       startTransition(() => {
         setSnapshot(hydrated);
@@ -172,7 +158,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!ready) return;
     const timeout = window.setTimeout(() => {
-      void saveSnapshotToDb(snapshot);
+      void persistSnapshotLocally(snapshot);
     }, 250);
     return () => window.clearTimeout(timeout);
   }, [ready, snapshot]);
@@ -180,92 +166,115 @@ export function AppProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!panelCloudConfig.enabled) return;
 
-    const unsubscribe = subscribeToCloudAuth(async (user) => {
-      if (!user) {
-        setCloud((current) => ({
-          ...current,
-          authUser: null,
-          permission: 'signed-out',
-          status: 'Entre com seu admin para sincronizar',
-          error: null,
-          isSyncing: false
-        }));
-        return;
-      }
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
 
-      setCloud((current) => ({
-        ...current,
-        authUser: user,
-        permission: 'checking',
-        status: 'Verificando acesso do admin...',
-        error: null
-      }));
-
-      try {
-        const isAdmin = await checkPanelAdminAccess(user.uid);
-        if (!isAdmin) {
-          setCloud((current) => ({
-            ...current,
-            authUser: user,
-            permission: 'blocked',
-            status: 'Conta autenticada, mas sem permissao de admin',
-            error: null
-          }));
+    void loadCloudModule()
+      .then((cloudModule) => {
+        if (cancelled) {
           return;
         }
 
-        setCloud((current) => ({
-          ...current,
-          authUser: user,
-          permission: 'admin',
-          status: 'Carregando dados da nuvem...',
-          error: null
-        }));
+        unsubscribe = cloudModule.subscribeToCloudAuth(async (user) => {
+          if (!user) {
+            setCloud((current) => ({
+              ...current,
+              authUser: null,
+              permission: 'signed-out',
+              status: 'Entre com seu admin para sincronizar',
+              error: null,
+              isSyncing: false
+            }));
+            return;
+          }
 
-        const remoteSnapshot = await loadCloudSnapshot();
-        if (snapshotHasData(remoteSnapshot)) {
-          const prepared = prepareSnapshot(remoteSnapshot);
-          skipNextCloudSyncRef.current = true;
-          setSnapshot(prepared);
-          await saveSnapshotToDb(prepared);
           setCloud((current) => ({
             ...current,
-            permission: 'admin',
-            status: 'Sincronizado com Firebase',
-            lastSyncedAt: new Date().toISOString(),
+            authUser: user,
+            permission: 'checking',
+            status: 'Verificando acesso do admin...',
             error: null
           }));
-          pushToast('success', 'Dados da nuvem carregados com sucesso.');
-        } else if (panelCloudConfig.autoUploadLocalDataOnFirstLogin && snapshotHasData(snapshotRef.current)) {
-          await saveCloudSnapshot(snapshotRef.current, user);
-          setCloud((current) => ({
-            ...current,
-            permission: 'admin',
-            status: 'Primeira sincronizacao concluida',
-            lastSyncedAt: new Date().toISOString(),
-            error: null
-          }));
-        } else {
-          setCloud((current) => ({
-            ...current,
-            permission: 'admin',
-            status: 'Nuvem vazia. O painel local continua pronto para sincronizar.',
-            error: null
-          }));
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Falha na sincronizacao';
+
+          try {
+            const isAdmin = await cloudModule.checkPanelAdminAccess(user.uid);
+            if (!isAdmin) {
+              setCloud((current) => ({
+                ...current,
+                authUser: user,
+                permission: 'blocked',
+                status: 'Conta autenticada, mas sem permissao de admin',
+                error: null
+              }));
+              return;
+            }
+
+            setCloud((current) => ({
+              ...current,
+              authUser: user,
+              permission: 'admin',
+              status: 'Carregando dados da nuvem...',
+              error: null
+            }));
+
+            const remoteSnapshot = await cloudModule.loadCloudSnapshot();
+            if (snapshotHasData(remoteSnapshot)) {
+              const prepared = prepareSnapshot(remoteSnapshot);
+              skipNextCloudSyncRef.current = true;
+              setSnapshot(prepared);
+              await persistSnapshotLocally(prepared);
+              setCloud((current) => ({
+                ...current,
+                permission: 'admin',
+                status: 'Sincronizado com Firebase',
+                lastSyncedAt: new Date().toISOString(),
+                error: null
+              }));
+              pushToast('success', 'Dados da nuvem carregados com sucesso.');
+            } else if (panelCloudConfig.autoUploadLocalDataOnFirstLogin && snapshotHasData(snapshotRef.current)) {
+              await cloudModule.saveCloudSnapshot(snapshotRef.current, user);
+              setCloud((current) => ({
+                ...current,
+                permission: 'admin',
+                status: 'Primeira sincronizacao concluida',
+                lastSyncedAt: new Date().toISOString(),
+                error: null
+              }));
+            } else {
+              setCloud((current) => ({
+                ...current,
+                permission: 'admin',
+                status: 'Nuvem vazia. O painel local continua pronto para sincronizar.',
+                error: null
+              }));
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Falha na sincronizacao';
+            setCloud((current) => ({
+              ...current,
+              permission: 'blocked',
+              status: 'Erro ao validar acesso',
+              error: message
+            }));
+            pushToast('error', message);
+          }
+        });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : 'Falha ao inicializar a nuvem.';
         setCloud((current) => ({
           ...current,
           permission: 'blocked',
-          status: 'Erro ao validar acesso',
+          status: 'Erro ao preparar a nuvem',
           error: message
         }));
         pushToast('error', message);
-      }
-    });
+      });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -288,7 +297,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         loadSnapshot: async (rawSnapshot: AppSnapshot) => {
           const prepared = prepareSnapshot(rawSnapshot);
           setSnapshot(prepared);
-          await saveSnapshotToDb(prepared);
+          await persistSnapshotLocally(prepared);
         },
         getSnapshot: () => snapshotRef.current
       }
@@ -320,12 +329,13 @@ export function AppProvider({ children }: PropsWithChildren) {
     }
   ) => {
     if (options?.backupReason) {
+      const { persistBackup } = await loadBackupModule();
       await persistBackup(snapshotRef.current, options.backupReason);
     }
     const prepared = prepareSnapshot(nextSnapshot);
     snapshotRef.current = prepared;
     setSnapshot(prepared);
-    await saveSnapshotToDb(prepared);
+    await persistSnapshotLocally(prepared);
     if (options?.successMessage) {
       pushToast('success', options.successMessage);
     }
@@ -353,6 +363,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         status: 'Sincronizando...',
         error: null
       }));
+      const { saveCloudSnapshot } = await loadCloudModule();
       await saveCloudSnapshot(nextSnapshot, cloud.authUser);
       setCloud((current) => ({
         ...current,
@@ -548,6 +559,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   };
 
   const toggleRouteSelection = async (routeId: string, clientId: string, checked: boolean) => {
+    const { resolveCommercialContext } = await loadCommercialModule();
     const commercialContext = resolveCommercialContext(
       selectedYear,
       selectedMonth,
@@ -592,12 +604,14 @@ export function AppProvider({ children }: PropsWithChildren) {
   };
 
   const saveBackup = async (reason = 'backup manual') => {
+    const { persistBackup } = await loadBackupModule();
     await persistBackup(snapshotRef.current, reason);
     pushToast('success', 'Backup salvo em IndexedDB.');
   };
 
   const deleteBackup = async (id: string) => {
-    await panelDb.backups.delete(id);
+    const { deleteBackupRecord } = await loadDbModule();
+    await deleteBackupRecord(id);
     pushToast('info', 'Backup removido.');
   };
 
@@ -671,6 +685,7 @@ export function AppProvider({ children }: PropsWithChildren) {
 
   const loginCloud = async (email: string, password: string) => {
     try {
+      const { loginToCloud } = await loadCloudModule();
       await loginToCloud(email, password);
       pushToast('success', 'Login enviado para o Firebase.');
     } catch (error) {
@@ -682,6 +697,7 @@ export function AppProvider({ children }: PropsWithChildren) {
 
   const logoutCloud = async () => {
     try {
+      const { logoutFromCloud } = await loadCloudModule();
       await logoutFromCloud();
       pushToast('info', 'Sessao encerrada.');
     } catch (error) {
@@ -699,6 +715,9 @@ export function AppProvider({ children }: PropsWithChildren) {
   const openWhatsApp = async (clientId: string, template: WhatsAppTemplate) => {
     const client = snapshotRef.current.clients.find((entry) => entry.id === clientId);
     if (!client) return;
+
+    const [{ commercialProfileForClient }, { buildWhatsAppLink, renderWhatsAppMessage }] =
+      await Promise.all([loadCommercialModule(), loadWhatsAppModule()]);
 
     const profile = commercialProfileForClient(
       client,
@@ -730,11 +749,6 @@ export function AppProvider({ children }: PropsWithChildren) {
     window.open(link.href, '_blank', 'noopener,noreferrer');
   };
 
-  const clients = snapshot.clients;
-  const searchResults = searchClients(clients, globalSearch);
-  const summary = dashboardSummary(snapshot, selectedYear, selectedMonth);
-  const worklists = worklistsForSnapshot(snapshot, selectedYear, selectedMonth);
-
   const value: AppContextValue = {
     ready,
     snapshot,
@@ -745,11 +759,6 @@ export function AppProvider({ children }: PropsWithChildren) {
     selectedClientId,
     cloud,
     toasts,
-    backups: backups ?? [],
-    clients,
-    searchResults,
-    summary,
-    worklists,
     setTheme,
     setSelectedYear,
     setSelectedMonth,
