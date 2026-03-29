@@ -42,5 +42,5 @@ jobs:
           printf '%s' "${FIREBASE_SERVICE_ACCOUNT}" > "${RUNNER_TEMP}/firebase-service-account.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/firebase-service-account.json" >> "${GITHUB_ENV}"
 
-      - name: Deploy hosting, rules and auth
-        run: npx firebase deploy --only hosting,firestore:rules,auth --project "${FIREBASE_PROJECT_ID}"
+      - name: Deploy hosting and rules
+        run: npx firebase deploy --only hosting,firestore:rules --project "${FIREBASE_PROJECT_ID}"

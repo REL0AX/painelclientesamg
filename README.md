@@ -61,4 +61,4 @@ No repositorio, configure:
 
 O secret `FIREBASE_SERVICE_ACCOUNT` deve conter o JSON completo da service account do Firebase/GCP.
 
-Sem variavel extra, o workflow publica em `painelclientesamg` e mantem Hosting, regras e Authentication alinhados. Quando fizer push para `main`, o arquivo `.github/workflows/firebase-deploy.yml` publica o painel automaticamente.
+Sem variavel extra, o workflow publica em `painelclientesamg` e mantem Hosting e regras alinhados. O Authentication ja foi provisionado e nao precisa entrar em todo deploy do GitHub. Quando fizer push para `main`, o arquivo `.github/workflows/firebase-deploy.yml` publica o painel automaticamente.
