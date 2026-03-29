@@ -1,17 +1,66 @@
 {
   "name": "painel-clientes-amg",
   "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Painel comercial e de relacionamento de clientes da AMG Pecas.",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "serve": "http-server public -a 127.0.0.1 -p 4173 -c-1",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
+    "lint": "eslint .",
+    "test": "vitest --pool=threads src/shared/lib/commercial.test.ts src/shared/lib/whatsapp.test.ts",
+    "test:run": "vitest run --pool=threads src/shared/lib/commercial.test.ts src/shared/lib/whatsapp.test.ts",
+    "test:coverage": "vitest run --coverage",
+    "test:rules:run": "vitest run tests/firestore.rules.test.ts",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-painelclientesamg \"npm run test:rules:run\"",
+    "test:e2e": "playwright test",
     "firebase:login": "firebase login",
     "firebase:emulators": "firebase emulators:start --only hosting,firestore,auth",
-    "firebase:deploy:auth": "firebase deploy --only auth",
-    "firebase:deploy:hosting": "firebase deploy --only hosting",
-    "firebase:deploy:rules": "firebase deploy --only firestore:rules",
-    "firebase:deploy": "firebase deploy --only hosting,firestore:rules,auth"
+    "firebase:deploy:hosting": "firebase deploy --only hosting --project painelclientesamg",
+    "firebase:deploy:rules": "firebase deploy --only firestore:rules --project painelclientesamg",
+    "firebase:deploy": "firebase deploy --only hosting,firestore:rules --project painelclientesamg"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@tanstack/react-query": "^5.95.2",
+    "clsx": "^2.1.1",
+    "dexie": "^4.4.1",
+    "dexie-react-hooks": "^4.4.0",
+    "firebase": "^12.11.0",
+    "lucide-react": "^1.7.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.2",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/vite": "^4.2.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react-swc": "^4.3.0",
+    "eslint": "^10.1.0",
     "firebase-tools": "^15.12.0",
-    "http-server": "^14.1.1"
+    "globals": "^17.4.0",
+    "jsdom": "^29.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.57.2",
+    "vite": "^8.0.3",
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.1.2"
   }
 }

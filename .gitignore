@@ -1,9 +1,10 @@
 node_modules/
+dist/
+playwright-report/
+test-results/
+coverage/
 .firebase/
 firebase-debug.log
-firestore-debug.log
-ui-debug.log
 .DS_Store
 Thumbs.db
-package-lock.json.bak
 *.local

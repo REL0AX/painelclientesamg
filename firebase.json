@@ -1,11 +1,17 @@
 {
   "hosting": {
     "site": "painelclientesamg",
-    "public": "public",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
     ],
     "headers": [
       {
@@ -18,7 +24,7 @@
         ]
       },
       {
-        "source": "/firebase-config.js",
+        "source": "/manifest.webmanifest",
         "headers": [
           {
             "key": "Cache-Control",

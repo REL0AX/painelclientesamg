@@ -10,15 +10,9 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/panelAdmins/$(request.auth.uid));
     }
 
-    function isBootstrapAdmin() {
-      return isSignedIn() &&
-        request.auth.token.email == "admin@admin.com.br";
-    }
-
     match /panelAdmins/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
-      allow create: if isBootstrapAdmin() && request.auth.uid == uid;
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /panels/{panelId} {

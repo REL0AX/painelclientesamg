@@ -1,64 +1,79 @@
 # Painel Clientes AMG
 
-Painel de clientes da AMG Peças preparado para:
+Painel refeito como SPA moderna em React + TypeScript para Firebase Hosting, com:
 
-- rodar localmente como app web
-- publicar no Firebase Hosting
-- versionar e automatizar deploy via GitHub Actions
-- usar `localStorage` como fallback e Firebase como modo online
+- React 19 + TypeScript 6
+- Vite 8
+- Tailwind CSS 4
+- Firebase Auth + Firestore modular
+- IndexedDB com Dexie
+- PWA com `vite-plugin-pwa`
+- testes com Vitest, Playwright e regras do Firestore
+
+## O que entrou nesta versao
+
+- Visao 360 do cliente com resumo, comercial, rota, historico, notas, vendas e edicao
+- busca global por nome, codigo, CNPJ, telefone, cidade e rota
+- tabela comercial mensal separada dos tiers historicos
+- mensagens de WhatsApp com variaveis do painel
+- worklists acionaveis para reativacao, proximidade de tabela, rota e qualidade de cadastro
+- migracao automatica do legado de `localStorage` para IndexedDB
+- sync com Firebase usando apenas `panelAdmins/<uid>` como autorizacao
+- backups versionados locais e export/import em JSON
 
 ## Estrutura
 
-- `public/index.html`: painel principal
-- `public/firebase-config.js`: configuracao ja ligada ao app web `amgpainelclientes`
-- `firebase.json`: configuracao do Hosting, do Firestore e do Authentication
-- `firestore.rules`: regras do banco
-- `.github/workflows/firebase-deploy.yml`: deploy automatico pelo GitHub
-- `.firebaserc`: projeto padrao do Firebase CLI
+- `src/app`: shell, rotas e store principal
+- `src/features`: dashboard, clientes, rotas, importacoes, produtos, configuracoes e drawer 360
+- `src/shared`: tipos, libs, calculos comerciais, Firebase, storage e UI base
+- `tests`: smoke e regras do Firestore
 
-## Como rodar localmente
+## Como rodar
 
 ```powershell
 npm install
-npm run serve
+npm run dev
 ```
 
-Se quiser testar pelo emulador do Firebase:
+Build local:
 
 ```powershell
-npm run firebase:emulators
+npm run build
+npm run preview
 ```
 
-## Como ligar no Firebase
-
-1. O app web `amgpainelclientes` ja esta configurado em `public/firebase-config.js`.
-2. O Authentication com Email/Password ja foi provisionado por deploy.
-3. O Firestore ja foi criado no projeto `painelclientesamg`.
-4. O repositorio ja aponta para `painelclientesamg` em `.firebaserc` e `firebase.json`.
-5. O email `admin@admin.com.br` ja esta liberado como primeiro admin.
-
-### Bootstrap do primeiro admin
-
-1. O usuario `admin@admin.com.br` ja foi criado no Firebase Authentication.
-2. O documento `panelAdmins/cjP4TelhQzZ68RlWfbjM42fcMje2` ja foi criado no Firestore.
-3. Se quiser criar outros admins depois, adicione novos documentos em `panelAdmins/<SEU_UID>`.
-
-Depois disso, o modo online passa a salvar no Firebase para esse usuario autenticado.
-
-## Como publicar manualmente
+## Testes
 
 ```powershell
-firebase login
-npm run firebase:deploy
+npm run lint
+npm run typecheck
+npm run test:run
+npm run test:rules
+npm run build
+npm run test:e2e
 ```
 
-## Como publicar pelo GitHub
+Observacao:
 
-No repositorio, configure:
+- `npm run test:rules` exige Java 21+ para o emulator atual do Firebase.
 
-- GitHub Secret: `FIREBASE_SERVICE_ACCOUNT`
-- GitHub Variable opcional: `FIREBASE_PROJECT_ID` se quiser sobrescrever o projeto padrao
+## Firebase
 
-O secret `FIREBASE_SERVICE_ACCOUNT` deve conter o JSON completo da service account do Firebase/GCP.
+- projeto: `painelclientesamg`
+- hosting: `painelclientesamg`
+- auth: `email/password`
+- regras: [firestore.rules](/C:/Projetos/Painel%20Clientes/firestore.rules)
 
-Sem variavel extra, o workflow publica em `painelclientesamg` e mantem Hosting e regras alinhados. O Authentication ja foi provisionado e nao precisa entrar em todo deploy do GitHub. Quando fizer push para `main`, o arquivo `.github/workflows/firebase-deploy.yml` publica o painel automaticamente.
+Para liberar um admin:
+
+1. crie o usuario no Authentication
+2. pegue o `uid`
+3. crie `panelAdmins/<uid>` no Firestore
+
+## GitHub Actions
+
+- `CI`: lint, typecheck, testes, build e smoke
+- `Preview Deploy`: preview channel em PR
+- `Production Deploy`: deploy de `hosting + firestore rules` no `main`
+
+Consulte [docs/operacao.md](/C:/Projetos/Painel%20Clientes/docs/operacao.md) para a rotina de admins, tabela comercial, WhatsApp e backups.
