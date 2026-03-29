@@ -1,0 +1,17 @@
+{
+  "name": "Painel Clientes AMG",
+  "short_name": "Painel AMG",
+  "description": "Painel comercial e de relacionamento da AMG Pecas.",
+  "theme_color": "#f97316",
+  "background_color": "#f7f2eb",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

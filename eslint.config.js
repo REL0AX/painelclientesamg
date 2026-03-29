@@ -7,6 +7,17 @@ export default tseslint.config(
     ignores: ['dist/**', 'coverage/**', 'playwright-report/**', 'test-results/**']
   },
   js.configs.recommended,
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.serviceworker
+      }
+    }
+  },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],

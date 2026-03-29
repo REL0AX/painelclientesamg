@@ -2,12 +2,12 @@
 
 Painel refeito como SPA moderna em React + TypeScript para Firebase Hosting, com:
 
-- React 19 + TypeScript 6
+- React 19 + TypeScript 5.9
 - Vite 8
 - Tailwind CSS 4
 - Firebase Auth + Firestore modular
 - IndexedDB com Dexie
-- PWA com `vite-plugin-pwa`
+- PWA com `manifest.webmanifest` + service worker manual
 - testes com Vitest, Playwright e regras do Firestore
 
 ## O que entrou nesta versao
