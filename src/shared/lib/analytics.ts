@@ -15,6 +15,16 @@ const lastPurchaseDate = (client: Client) => {
   return lastSale ? new Date(lastSale.data) : null;
 };
 
+const hasOverdueOpenTask = (snapshot: AppSnapshot, clientId: string) =>
+  snapshot.tasks.some((task) => {
+    if (task.clientId !== clientId || task.status !== 'open') {
+      return false;
+    }
+
+    const dueAt = new Date(task.dueAt);
+    return !Number.isNaN(dueAt.getTime()) && dueAt.getTime() < Date.now();
+  });
+
 export const clientSignals = (
   client: Client,
   snapshot: AppSnapshot,
@@ -121,6 +131,33 @@ export const clientSignals = (
     });
   }
 
+  if (hasOverdueOpenTask(snapshot, client.id)) {
+    signals.push({
+      id: 'tarefa-vencida',
+      label: 'Tarefa vencida',
+      detail: 'Existe retorno pendente vencido para este cliente.',
+      tone: 'danger'
+    });
+  }
+
+  if (client.priority === 'alta' || client.priority === 'urgente' || client.stage === 'prioritario') {
+    signals.push({
+      id: 'cliente-prioritario',
+      label: 'Cliente prioritario',
+      detail: 'Cliente marcado para acao prioritaria.',
+      tone: 'info'
+    });
+  }
+
+  if (client.stage === 'aguardando' || client.nextActionId) {
+    signals.push({
+      id: 'aguardando-retorno',
+      label: 'Aguardando retorno',
+      detail: 'Cliente com proxima acao aberta.',
+      tone: 'info'
+    });
+  }
+
   return signals;
 };
 
@@ -148,9 +185,23 @@ export const dashboardSummary = (
       profile.missingToNext > 0 &&
       profile.missingToNext <= snapshot.settings.thresholds.nearNextTable
   ).length;
+
   const staleClients = snapshot.clients.filter((client) =>
     clientSignals(client, snapshot, selectedYear, selectedMonth).some((signal) => signal.id === 'sem-compra-recente')
   ).length;
+
+  const atRiskClients = snapshot.clients.filter((client) =>
+    clientSignals(client, snapshot, selectedYear, selectedMonth).some((signal) => signal.id === 'em-risco')
+  ).length;
+
+  const overdueTasks = snapshot.tasks.filter((task) => {
+    if (task.status !== 'open') {
+      return false;
+    }
+
+    const dueAt = new Date(task.dueAt);
+    return !Number.isNaN(dueAt.getTime()) && dueAt.getTime() < Date.now();
+  }).length;
 
   return {
     totalClients: snapshot.clients.length,
@@ -158,7 +209,9 @@ export const dashboardSummary = (
     commercialRevenue: revenue,
     avgTicket: totalOrders > 0 ? revenue / totalOrders : 0,
     clientsNearNextBracket: nearNext,
-    staleClients
+    staleClients,
+    atRiskClients,
+    overdueTasks
   };
 };
 
@@ -175,17 +228,33 @@ export const worklistsForSnapshot = (
   const createWorklist = (
     id: WorklistItem['signal'],
     title: string,
-    description: string
+    description: string,
+    clients = decorated.filter((item) => item.signals.some((signal) => signal.id === id)).map((item) => item.client)
   ): WorklistItem => ({
     id,
     title,
     description,
     signal: id,
-    clients: decorated.filter((item) => item.signals.some((signal) => signal.id === id)).map((item) => item.client)
+    clients
   });
+
+  const routeCities = new Set(snapshot.routes.flatMap((route) => route.cities.map((city) => normalizeForSearch(city))));
+  const outsideCoverage = snapshot.clients.filter((client) => {
+    const city = normalizeForSearch(client.cidade);
+    return Boolean(city) && !routeCities.has(city);
+  });
+
+  const routesWithoutCoverage = snapshot.routes
+    .filter((route) => !snapshot.clients.some((client) => client.route?.id === route.id))
+    .flatMap((route) =>
+      snapshot.clients.filter((client) =>
+        route.cities.some((city) => normalizeForSearch(city) === normalizeForSearch(client.cidade))
+      )
+    );
 
   return [
     createWorklist('sem-compra-recente', 'Sem compra desde X', 'Clientes para reativacao imediata.'),
+    createWorklist('em-risco', 'Em risco', 'Clientes que precisam de retomada urgente.'),
     createWorklist(
       'perto-da-proxima-tabela',
       'Perto da proxima tabela',
@@ -197,6 +266,33 @@ export const worklistsForSnapshot = (
       'saida-de-rota-proxima',
       'Rota saindo em breve',
       'Clientes com janela curta para montar pedido antes da saida.'
+    ),
+    createWorklist(
+      'tarefa-vencida',
+      'Tarefas vencidas',
+      'Clientes com retornos ou pendencias atrasadas.'
+    ),
+    createWorklist(
+      'cliente-prioritario',
+      'Clientes prioritarios',
+      'Clientes com prioridade alta ou marcados como prioritarios.'
+    ),
+    createWorklist(
+      'aguardando-retorno',
+      'Aguardando retorno',
+      'Clientes com proxima acao em aberto.'
+    ),
+    createWorklist(
+      'fora-da-malha',
+      'Clientes fora da malha',
+      'Clientes cuja cidade ainda nao esta coberta por nenhuma rota.',
+      outsideCoverage
+    ),
+    createWorklist(
+      'rota-sem-cobertura',
+      'Rotas sem cobertura',
+      'Rotas configuradas que ainda nao receberam clientes vinculados.',
+      routesWithoutCoverage
     )
   ];
 };
@@ -213,9 +309,20 @@ export const searchClients = (clients: Client[], query: string) => {
       client.uf,
       client.telefone1,
       client.telefone2,
-      client.route?.name
+      client.route?.name,
+      client.stage,
+      client.priority,
+      ...(client.tags ?? [])
     ]
       .filter(Boolean)
       .some((value) => normalizeForSearch(String(value)).includes(normalized))
   );
 };
+
+export const clientSelectionForSignal = (
+  snapshot: AppSnapshot,
+  signal: WorklistItem['signal'],
+  selectedYear: number,
+  selectedMonth: number | null
+) =>
+  worklistsForSnapshot(snapshot, selectedYear, selectedMonth).find((item) => item.signal === signal)?.clients ?? [];

@@ -1,15 +1,25 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
-import { MessageCircle, RouteIcon, Save, Trash2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { CheckCircle2, MessageCircle, RouteIcon, Save, SquareCheckBig, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '@/app/state/AppContext';
 import { clientSignals } from '@/shared/lib/analytics';
 import { commercialProfileForClient } from '@/shared/lib/commercial';
+import { deriveClientTimeline } from '@/shared/lib/history';
 import { routeDepartureInfo } from '@/shared/lib/routes';
 import { createId, formatCurrency, formatDate, formatDateTime } from '@/shared/lib/utils';
 import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { FieldLabel, Input, Select, Textarea } from '@/shared/ui/Field';
+import type { ClientTask } from '@/shared/types/domain';
+
+const emptyTaskForm = {
+  title: '',
+  kind: 'retorno' as ClientTask['kind'],
+  dueAt: new Date().toISOString().slice(0, 10),
+  notes: '',
+  priority: 'media' as ClientTask['priority']
+};
 
 export function ClientDrawer() {
   const {
@@ -22,6 +32,9 @@ export function ClientDrawer() {
     addContact,
     saveSale,
     deleteSale,
+    saveTask,
+    updateTaskStatus,
+    deleteTask,
     selectedYear,
     selectedMonth,
     openWhatsApp
@@ -31,6 +44,7 @@ export function ClientDrawer() {
   const [contactSummary, setContactSummary] = useState('');
   const [contactType, setContactType] = useState<'telefone' | 'whatsapp' | 'email' | 'visita' | 'outro'>('whatsapp');
   const [noteText, setNoteText] = useState('');
+  const [taskForm, setTaskForm] = useState(emptyTaskForm);
   const [saleForm, setSaleForm] = useState({
     id: '',
     pedido: '',
@@ -48,7 +62,12 @@ export function ClientDrawer() {
     uf: '',
     telefone1: '',
     telefone2: '',
-    manualRouteId: 'automatic'
+    email: '',
+    manualRouteId: 'automatic',
+    stage: 'ativo',
+    priority: 'media',
+    preferredChannel: 'whatsapp',
+    tags: ''
   });
 
   useEffect(() => {
@@ -61,11 +80,17 @@ export function ClientDrawer() {
       uf: client.uf,
       telefone1: client.telefone1,
       telefone2: client.telefone2,
-      manualRouteId: client.manualRouteId ?? 'automatic'
+      email: client.email ?? '',
+      manualRouteId: client.manualRouteId ?? 'automatic',
+      stage: client.stage,
+      priority: client.priority,
+      preferredChannel: client.preferredChannel,
+      tags: client.tags.join(', ')
     });
     setActiveTab(client.nome ? 'resumo' : 'edicao');
     setContactSummary('');
     setNoteText('');
+    setTaskForm(emptyTaskForm);
     setSaleForm({
       id: '',
       pedido: '',
@@ -76,6 +101,14 @@ export function ClientDrawer() {
       valor: ''
     });
   }, [client?.id]);
+
+  const clientTasks = useMemo(
+    () =>
+      snapshot.tasks
+        .filter((task) => task.clientId === client?.id)
+        .sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt)),
+    [client?.id, snapshot.tasks]
+  );
 
   if (!client) {
     return null;
@@ -93,6 +126,26 @@ export function ClientDrawer() {
   const progressTemplate =
     snapshot.settings.whatsappTemplates.find((template) => template.id === 'progress') ??
     snapshot.settings.whatsappTemplates[0];
+  const timeline = deriveClientTimeline(snapshot, client);
+
+  const handleSaveTask = async () => {
+    if (!taskForm.title.trim()) {
+      return;
+    }
+
+    await saveTask({
+      id: createId('task'),
+      clientId: client.id,
+      title: taskForm.title.trim(),
+      kind: taskForm.kind,
+      dueAt: new Date(taskForm.dueAt).toISOString(),
+      status: 'open',
+      notes: taskForm.notes.trim(),
+      priority: taskForm.priority,
+      createdAt: Date.now()
+    });
+    setTaskForm(emptyTaskForm);
+  };
 
   return (
     <Dialog.Root open={Boolean(selectedClientId)} onOpenChange={(nextOpen) => !nextOpen && openClient(null)}>
@@ -107,9 +160,18 @@ export function ClientDrawer() {
               </Dialog.Description>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Badge tone="info">{profile.currentBracket.label}</Badge>
+                <Badge tone={client.priority === 'urgente' ? 'danger' : client.priority === 'alta' ? 'warning' : 'neutral'}>
+                  {client.priority}
+                </Badge>
+                <Badge tone="info">{client.stage}</Badge>
                 {signals.map((signal) => (
                   <Badge key={signal.id} tone={signal.tone}>
                     {signal.label}
+                  </Badge>
+                ))}
+                {(client.tags ?? []).map((tag) => (
+                  <Badge key={tag} tone="neutral">
+                    #{tag}
                   </Badge>
                 ))}
               </div>
@@ -124,13 +186,17 @@ export function ClientDrawer() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button variant="secondary" onClick={() => openWhatsApp(client.id, progressTemplate)}>
+            <Button variant="secondary" onClick={() => progressTemplate && void openWhatsApp(client.id, progressTemplate)}>
               <MessageCircle className="mr-2 h-4 w-4" />
               WhatsApp
             </Button>
             <Button variant="secondary" onClick={() => setActiveTab('edicao')}>
               <Save className="mr-2 h-4 w-4" />
               Editar cadastro
+            </Button>
+            <Button variant="secondary" onClick={() => setActiveTab('tarefas')}>
+              <SquareCheckBig className="mr-2 h-4 w-4" />
+              Tarefas
             </Button>
           </div>
 
@@ -140,7 +206,8 @@ export function ClientDrawer() {
                 ['resumo', 'Resumo'],
                 ['comercial', 'Comercial'],
                 ['rota', 'Rota'],
-                ['historico', 'Historico'],
+                ['timeline', 'Timeline'],
+                ['tarefas', 'Tarefas'],
                 ['notas', 'Notas'],
                 ['vendas', 'Vendas'],
                 ['edicao', 'Edicao']
@@ -164,6 +231,7 @@ export function ClientDrawer() {
                     <p>Cidade: <span className="font-semibold text-[var(--ink-900)]">{client.cidade || 'Nao informada'}</span></p>
                     <p>Telefone 1: <span className="font-semibold text-[var(--ink-900)]">{client.telefone1 || 'Nao informado'}</span></p>
                     <p>Telefone 2: <span className="font-semibold text-[var(--ink-900)]">{client.telefone2 || 'Nao informado'}</span></p>
+                    <p>Canal preferido: <span className="font-semibold text-[var(--ink-900)]">{client.preferredChannel}</span></p>
                   </div>
                 </div>
                 <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
@@ -172,14 +240,14 @@ export function ClientDrawer() {
                     <p>Total historico: <span className="font-semibold text-[var(--ink-900)]">{formatCurrency(client.totalCompras)}</span></p>
                     <p>Compras: <span className="font-semibold text-[var(--ink-900)]">{client.compras.length}</span></p>
                     <p>Ultimo contato: <span className="font-semibold text-[var(--ink-900)]">{client.contacts[0] ? formatDateTime(client.contacts[0].timestamp) : 'Sem historico'}</span></p>
-                    <p>Notas: <span className="font-semibold text-[var(--ink-900)]">{client.notes.length}</span></p>
+                    <p>Tarefas em aberto: <span className="font-semibold text-[var(--ink-900)]">{clientTasks.filter((task) => task.status === 'open').length}</span></p>
                   </div>
                 </div>
               </section>
             </Tabs.Content>
 
             <Tabs.Content value="comercial" className="mt-6 space-y-5">
-              <section className="grid gap-4 lg:grid-cols-3">
+              <section className="grid gap-4 lg:grid-cols-4">
                 <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Mes comercial</p>
                   <p className="mt-3 text-2xl font-bold text-[var(--ink-900)]">{profile.contextLabel}</p>
@@ -191,6 +259,11 @@ export function ClientDrawer() {
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Acumulado</p>
                   <p className="mt-3 text-2xl font-bold text-[var(--ink-900)]">{formatCurrency(profile.revenue)}</p>
                   <p className="mt-2 text-sm text-[var(--ink-600)]">No mes anterior: {formatCurrency(profile.previousRevenue)}</p>
+                </div>
+                <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Faixa</p>
+                  <p className="mt-3 text-2xl font-bold text-[var(--ink-900)]">{profile.currentBracket.label}</p>
+                  <p className="mt-2 text-sm text-[var(--ink-600)]">Movimento: {profile.bracketMovement}</p>
                 </div>
                 <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Proxima faixa</p>
@@ -225,7 +298,7 @@ export function ClientDrawer() {
               </div>
             </Tabs.Content>
 
-            <Tabs.Content value="historico" className="mt-6 space-y-5">
+            <Tabs.Content value="timeline" className="mt-6 space-y-5">
               <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
                 <h3 className="text-lg font-semibold text-[var(--ink-900)]">Registrar contato</h3>
                 <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr_auto]">
@@ -247,21 +320,97 @@ export function ClientDrawer() {
                   </Button>
                 </div>
               </div>
+
               <div className="space-y-3">
-                {client.contacts.length > 0 ? (
-                  client.contacts.map((contact) => (
-                    <div key={contact.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+                {timeline.length > 0 ? (
+                  timeline.map((event) => (
+                    <div key={event.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <Badge tone="info">{contact.type}</Badge>
-                        <p className="text-xs text-[var(--ink-500)]">{formatDateTime(contact.timestamp)}</p>
+                        <Badge tone={event.tone}>{event.type}</Badge>
+                        <p className="text-xs text-[var(--ink-500)]">{formatDateTime(event.timestamp)}</p>
                       </div>
-                      <p className="mt-3 text-sm text-[var(--ink-700)]">{contact.summary}</p>
-                      {contact.preview ? <p className="mt-2 rounded-2xl bg-[var(--panel-subtle)] p-3 text-sm text-[var(--ink-600)]">{contact.preview}</p> : null}
+                      <p className="mt-3 text-sm font-semibold text-[var(--ink-900)]">{event.title}</p>
+                      <p className="mt-2 text-sm text-[var(--ink-700)]">{event.detail}</p>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-[24px] border border-dashed border-[var(--line)] bg-white/70 p-5 text-sm text-[var(--ink-600)]">
-                    Nenhum contato registrado ainda.
+                    Nenhum evento no timeline ainda.
+                  </div>
+                )}
+              </div>
+            </Tabs.Content>
+
+            <Tabs.Content value="tarefas" className="mt-6 space-y-5">
+              <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                <h3 className="text-lg font-semibold text-[var(--ink-900)]">Nova tarefa</h3>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <Input value={taskForm.title} onChange={(event) => setTaskForm((current) => ({ ...current, title: event.target.value }))} placeholder="Titulo da tarefa" />
+                  <Select value={taskForm.kind} onChange={(event) => setTaskForm((current) => ({ ...current, kind: event.target.value as ClientTask['kind'] }))}>
+                    <option value="retorno">Retorno</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="visita">Visita</option>
+                    <option value="rota">Rota</option>
+                    <option value="pendencia">Pendencia</option>
+                    <option value="follow-up">Follow-up</option>
+                  </Select>
+                  <Input type="date" value={taskForm.dueAt} onChange={(event) => setTaskForm((current) => ({ ...current, dueAt: event.target.value }))} />
+                  <Select value={taskForm.priority} onChange={(event) => setTaskForm((current) => ({ ...current, priority: event.target.value as ClientTask['priority'] }))}>
+                    <option value="baixa">Baixa</option>
+                    <option value="media">Media</option>
+                    <option value="alta">Alta</option>
+                    <option value="urgente">Urgente</option>
+                  </Select>
+                </div>
+                <div className="mt-3">
+                  <Textarea rows={4} value={taskForm.notes} onChange={(event) => setTaskForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Contexto da tarefa" />
+                </div>
+                <div className="mt-3">
+                  <Button onClick={() => void handleSaveTask()}>
+                    <Save className="mr-2 h-4 w-4" />
+                    Salvar tarefa
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {clientTasks.length > 0 ? (
+                  clientTasks.map((task) => (
+                    <div key={task.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-[var(--ink-900)]">{task.title}</p>
+                          <p className="mt-1 text-sm text-[var(--ink-600)]">
+                            {task.kind} • vence {formatDate(task.dueAt)} • {task.priority}
+                          </p>
+                        </div>
+                        <Badge tone={task.status === 'done' ? 'success' : task.status === 'canceled' ? 'warning' : 'info'}>
+                          {task.status}
+                        </Badge>
+                      </div>
+                      {task.notes ? <p className="mt-3 rounded-2xl bg-[var(--panel-subtle)] p-3 text-sm text-[var(--ink-700)]">{task.notes}</p> : null}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {task.status === 'open' ? (
+                          <Button variant="secondary" onClick={() => void updateTaskStatus(task.id, 'done')}>
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Concluir
+                          </Button>
+                        ) : null}
+                        {task.status === 'open' ? (
+                          <Button variant="ghost" onClick={() => void updateTaskStatus(task.id, 'canceled')}>
+                            Cancelar
+                          </Button>
+                        ) : null}
+                        <Button variant="ghost" onClick={() => void deleteTask(task.id)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Excluir
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[24px] border border-dashed border-[var(--line)] bg-white/70 p-5 text-sm text-[var(--ink-600)]">
+                    Nenhuma tarefa registrada para este cliente.
                   </div>
                 )}
               </div>
@@ -372,6 +521,10 @@ export function ClientDrawer() {
                     <Input value={editForm.cnpj} onChange={(event) => setEditForm((current) => ({ ...current, cnpj: event.target.value.replace(/\D/g, '') }))} />
                   </div>
                   <div>
+                    <FieldLabel>Email</FieldLabel>
+                    <Input value={editForm.email} onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))} />
+                  </div>
+                  <div>
                     <FieldLabel>UF</FieldLabel>
                     <Input value={editForm.uf} onChange={(event) => setEditForm((current) => ({ ...current, uf: event.target.value.toUpperCase() }))} />
                   </div>
@@ -391,6 +544,16 @@ export function ClientDrawer() {
                     </Select>
                   </div>
                   <div>
+                    <FieldLabel>Canal preferido</FieldLabel>
+                    <Select value={editForm.preferredChannel} onChange={(event) => setEditForm((current) => ({ ...current, preferredChannel: event.target.value }))}>
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="telefone">Telefone</option>
+                      <option value="email">Email</option>
+                      <option value="visita">Visita</option>
+                      <option value="outro">Outro</option>
+                    </Select>
+                  </div>
+                  <div>
                     <FieldLabel>Telefone 1</FieldLabel>
                     <Input value={editForm.telefone1} onChange={(event) => setEditForm((current) => ({ ...current, telefone1: event.target.value.replace(/\D/g, '') }))} />
                   </div>
@@ -398,6 +561,30 @@ export function ClientDrawer() {
                     <FieldLabel>Telefone 2</FieldLabel>
                     <Input value={editForm.telefone2} onChange={(event) => setEditForm((current) => ({ ...current, telefone2: event.target.value.replace(/\D/g, '') }))} />
                   </div>
+                  <div>
+                    <FieldLabel>Estagio</FieldLabel>
+                    <Select value={editForm.stage} onChange={(event) => setEditForm((current) => ({ ...current, stage: event.target.value }))}>
+                      <option value="ativo">Ativo</option>
+                      <option value="reativar">Reativar</option>
+                      <option value="negociando">Negociando</option>
+                      <option value="aguardando">Aguardando</option>
+                      <option value="sem-rota">Sem rota</option>
+                      <option value="prioritario">Prioritario</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <FieldLabel>Prioridade</FieldLabel>
+                    <Select value={editForm.priority} onChange={(event) => setEditForm((current) => ({ ...current, priority: event.target.value }))}>
+                      <option value="baixa">Baixa</option>
+                      <option value="media">Media</option>
+                      <option value="alta">Alta</option>
+                      <option value="urgente">Urgente</option>
+                    </Select>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <FieldLabel>Tags</FieldLabel>
+                  <Input value={editForm.tags} onChange={(event) => setEditForm((current) => ({ ...current, tags: event.target.value }))} placeholder="Separadas por virgula" />
                 </div>
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Button
@@ -411,7 +598,12 @@ export function ClientDrawer() {
                         uf: editForm.uf,
                         telefone1: editForm.telefone1,
                         telefone2: editForm.telefone2,
-                        manualRouteId: editForm.manualRouteId === 'automatic' ? undefined : editForm.manualRouteId
+                        email: editForm.email,
+                        manualRouteId: editForm.manualRouteId === 'automatic' ? undefined : editForm.manualRouteId,
+                        stage: editForm.stage as typeof client.stage,
+                        priority: editForm.priority as typeof client.priority,
+                        preferredChannel: editForm.preferredChannel as typeof client.preferredChannel,
+                        tags: editForm.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
                       })
                     }
                   >

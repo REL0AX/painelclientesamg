@@ -1,12 +1,15 @@
 import type {
   AppSettings,
+  ClientPriority,
+  ClientStage,
+  ImportMergePolicy,
   MonthlyCommercialBracket,
   ThresholdSettings,
   TierDefinition,
   WhatsAppTemplate
 } from '@/shared/types/domain';
 
-export const APP_SCHEMA_VERSION = 2;
+export const APP_SCHEMA_VERSION = 3;
 export const APP_DB_NAME = 'painel-clientes-amg-db';
 export const APP_SNAPSHOT_KEY = 'app-snapshot';
 export const MAX_BACKUPS = 20;
@@ -23,6 +26,24 @@ export const STORAGE_KEYS = {
   settings: 'amg-settings',
   theme: 'amg-theme'
 } as const;
+
+export const CLIENT_STAGES: Array<{ value: ClientStage; label: string }> = [
+  { value: 'ativo', label: 'Ativo' },
+  { value: 'reativar', label: 'Reativar' },
+  { value: 'negociando', label: 'Negociando' },
+  { value: 'aguardando', label: 'Aguardando' },
+  { value: 'sem-rota', label: 'Sem rota' },
+  { value: 'prioritario', label: 'Prioritario' }
+];
+
+export const CLIENT_PRIORITIES: Array<{ value: ClientPriority; label: string }> = [
+  { value: 'baixa', label: 'Baixa' },
+  { value: 'media', label: 'Media' },
+  { value: 'alta', label: 'Alta' },
+  { value: 'urgente', label: 'Urgente' }
+];
+
+export const DEFAULT_IMPORT_MERGE_POLICY: ImportMergePolicy = 'merge';
 
 export const DEFAULT_TIERS: Record<string, TierDefinition> = {
   MESTRE: { level: 6, name: 'Mestre', min: 200000 },
@@ -45,7 +66,8 @@ export const DEFAULT_COMMERCIAL_BRACKETS: MonthlyCommercialBracket[] = [
 export const DEFAULT_WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
   {
     id: 'reactivation',
-    kind: 'reactivation',
+    category: 'reativacao',
+    enabled: true,
     name: 'Reativacao',
     description: 'Mensagem para clientes sem compra recente.',
     message:
@@ -53,7 +75,8 @@ export const DEFAULT_WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
   },
   {
     id: 'progress',
-    kind: 'progress',
+    category: 'progresso',
+    enabled: true,
     name: 'Progresso de Tabela',
     description: 'Mensagem comercial com acumulado mensal e distancia para a proxima tabela.',
     message:
@@ -61,15 +84,35 @@ export const DEFAULT_WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
   },
   {
     id: 'route',
-    kind: 'route',
+    category: 'rota',
+    enabled: true,
     name: 'Rota e Agenda',
     description: 'Mensagem com rota, prazo de pedido e saida da rota.',
     message:
       'Oi {{nome}}! Sua rota atual e {{rota}}. O prazo para pedido vai ate {{prazo_pedido}} e a saida da rota esta prevista para {{saida_rota}}.'
   },
   {
+    id: 'soft-charge',
+    category: 'cobranca-leve',
+    enabled: true,
+    name: 'Cobranca leve',
+    description: 'Mensagem de lembrete suave e acompanhamento comercial.',
+    message:
+      'Oi {{nome}}! Passando para reforcar seu acompanhamento comercial com a AMG. Hoje voce esta na {{tabela_atual}} e falta {{falta_para_proxima}} para a proxima faixa.'
+  },
+  {
+    id: 'follow-up',
+    category: 'follow-up',
+    enabled: true,
+    name: 'Follow-up',
+    description: 'Mensagem de retorno apos visita, proposta ou contato anterior.',
+    message:
+      'Oi {{nome}}! Estou retomando nosso ultimo contato para te ajudar no proximo pedido. Se fizer sentido, posso montar uma sugestao com base no seu acumulado atual de {{faturamento_mes}}.'
+  },
+  {
     id: 'freeform',
-    kind: 'freeform',
+    category: 'livre',
+    enabled: true,
     name: 'Mensagem Livre',
     description: 'Template livre com variaveis do painel.',
     message:
@@ -90,7 +133,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   commercialBrackets: DEFAULT_COMMERCIAL_BRACKETS,
   whatsappTemplates: DEFAULT_WHATSAPP_TEMPLATES,
   thresholds: DEFAULT_THRESHOLDS,
-  timezone: 'America/Sao_Paulo'
+  timezone: 'America/Sao_Paulo',
+  maxBackups: MAX_BACKUPS,
+  defaultImportMergePolicy: DEFAULT_IMPORT_MERGE_POLICY
 };
 
 export const MONTH_LABELS = [

@@ -1,9 +1,24 @@
 import { lazy, Suspense } from 'react';
-import { BellRing, Cloud, LayoutGrid, MoonStar, RouteIcon, Settings2, SunMedium, Upload, Package2, Plus } from 'lucide-react';
+import {
+  BellRing,
+  Cloud,
+  LayoutGrid,
+  ListTodo,
+  MessageCircleMore,
+  MoonStar,
+  Package2,
+  Plus,
+  RouteIcon,
+  Settings2,
+  ShieldCheck,
+  SunMedium,
+  Upload
+} from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { CommandPalette } from '@/app/layout/CommandPalette';
 import { useAppContext } from '@/app/state/AppContext';
-import { Button } from '@/shared/ui/Button';
 import { Badge } from '@/shared/ui/Badge';
+import { Button } from '@/shared/ui/Button';
 import { cn, formatDateTime } from '@/shared/lib/utils';
 
 const GlobalClientOmnibox = lazy(() =>
@@ -19,9 +34,24 @@ const navItems = [
   { to: '/clientes', label: 'Clientes', icon: BellRing },
   { to: '/rotas', label: 'Rotas', icon: RouteIcon },
   { to: '/produtos', label: 'Produtos', icon: Package2 },
+  { to: '/tarefas', label: 'Tarefas', icon: ListTodo },
+  { to: '/campanhas', label: 'Campanhas', icon: MessageCircleMore },
   { to: '/importacoes', label: 'Importacoes', icon: Upload },
+  { to: '/diagnostico', label: 'Diagnostico', icon: ShieldCheck },
   { to: '/configuracoes', label: 'Configuracoes', icon: Settings2 }
 ];
+
+const preloaders: Record<string, () => Promise<unknown>> = {
+  '/': () => import('@/features/dashboard/DashboardPage'),
+  '/clientes': () => import('@/features/clients/ClientsPage'),
+  '/rotas': () => import('@/features/routes/RoutesPage'),
+  '/produtos': () => import('@/features/products/ProductsPage'),
+  '/tarefas': () => import('@/features/tasks/TasksPage'),
+  '/campanhas': () => import('@/features/campaigns/CampaignsPage'),
+  '/importacoes': () => import('@/features/imports/ImportsPage'),
+  '/diagnostico': () => import('@/features/diagnostics/DiagnosticsPage'),
+  '/configuracoes': () => import('@/features/settings/SettingsPage')
+};
 
 export function AppShell() {
   const {
@@ -34,6 +64,7 @@ export function AppShell() {
     setTheme,
     createClient,
     selectedClientId,
+    snapshot,
     toasts,
     dismissToast
   } = useAppContext();
@@ -42,14 +73,14 @@ export function AppShell() {
 
   return (
     <div className="page-shell">
-      <div className="glass-grid fixed inset-0 pointer-events-none opacity-70" />
+      <div className="glass-grid pointer-events-none fixed inset-0 opacity-70" />
       <div className="mx-auto grid min-h-screen max-w-[1600px] grid-cols-1 gap-6 px-4 py-4 lg:grid-cols-[270px_1fr] lg:px-6">
         <aside className="rounded-[32px] border border-[var(--line)] bg-[var(--panel)] p-4 shadow-[0_28px_90px_rgba(15,23,42,0.08)] backdrop-blur lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
           <div className="rounded-[28px] bg-[var(--bg-strong)] p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--ink-500)]">AMG</p>
             <h1 className="mt-2 text-2xl font-bold text-[var(--ink-900)]">Painel Clientes</h1>
             <p className="mt-2 text-sm text-[var(--ink-600)]">
-              Comercial, relacionamento, rotas e sinais do cliente em uma visao unica.
+              CRM operacional local-first com rotas, campanhas manuais, tarefas e sinais do cliente em uma visao unica.
             </p>
           </div>
 
@@ -59,6 +90,8 @@ export function AppShell() {
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
+                onMouseEnter={() => void preloaders[item.to]?.()}
+                onFocus={() => void preloaders[item.to]?.()}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition',
@@ -95,6 +128,17 @@ export function AppShell() {
                 {cloud.permission}
               </Badge>
               {cloud.lastSyncedAt ? <Badge tone="info">Sync {formatDateTime(cloud.lastSyncedAt)}</Badge> : null}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-[var(--line)] bg-[var(--panel-subtle)] p-4">
+            <p className="text-sm font-semibold text-[var(--ink-900)]">Operacao</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge tone="info">{snapshot.tasks.filter((task) => task.status === 'open').length} tarefas abertas</Badge>
+              <Badge tone="warning">{snapshot.clients.filter((client) => !client.route?.id).length} sem rota</Badge>
+              <Badge tone="success">
+                {snapshot.settings.whatsappTemplates.filter((template) => template.enabled).length} templates ativos
+              </Badge>
             </div>
           </div>
         </aside>
@@ -145,6 +189,7 @@ export function AppShell() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
+                <CommandPalette />
                 <Button variant="secondary" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
                   {theme === 'light' ? <MoonStar className="mr-2 h-4 w-4" /> : <SunMedium className="mr-2 h-4 w-4" />}
                   {theme === 'light' ? 'Escuro' : 'Claro'}
@@ -194,3 +239,4 @@ export function AppShell() {
     </div>
   );
 }
+

@@ -2,23 +2,28 @@ import { z } from 'zod';
 import {
   APP_SCHEMA_VERSION,
   DEFAULT_COMMERCIAL_BRACKETS,
+  DEFAULT_IMPORT_MERGE_POLICY,
   DEFAULT_SETTINGS,
   DEFAULT_THRESHOLDS,
   DEFAULT_TIERS,
-  DEFAULT_WHATSAPP_TEMPLATES
+  DEFAULT_WHATSAPP_TEMPLATES,
+  MAX_BACKUPS
 } from '@/shared/lib/constants';
 import { createId, normalizeDigits } from '@/shared/lib/utils';
 import type {
   AppSettings,
   AppSnapshot,
   Client,
+  ClientTask,
   ContactEvent,
-  ImportHistoryEntry,
+  HistoryEntry,
   MonthlyCommercialBracket,
   Note,
   Product,
   RouteDefinition,
+  SavedView,
   Sale,
+  SyncLedger,
   TierDefinition,
   WhatsAppTemplate
 } from '@/shared/types/domain';
@@ -74,7 +79,16 @@ const clientSchema = z.object({
   notes: z.array(noteSchema).catch([]),
   contacts: z.array(contactSchema).catch([]),
   importId: z.string().optional(),
-  manualRouteId: z.string().optional()
+  manualRouteId: z.string().optional(),
+  stage: z
+    .enum(['ativo', 'reativar', 'negociando', 'aguardando', 'sem-rota', 'prioritario'])
+    .catch('ativo'),
+  priority: z.enum(['baixa', 'media', 'alta', 'urgente']).catch('media'),
+  tags: z.array(z.string()).catch([]),
+  preferredChannel: z
+    .enum(['whatsapp-opened', 'whatsapp', 'telefone', 'email', 'visita', 'outro'])
+    .catch('whatsapp'),
+  nextActionId: z.string().optional()
 });
 
 const productSchema = z.object({
@@ -101,9 +115,29 @@ const routeSchema = z.object({
 
 const historySchema = z.object({
   id: z.string().optional(),
-  type: z.enum(['clients', 'sales', 'products', 'backup', 'restore']).catch('backup'),
+  type: z
+    .enum([
+      'clients',
+      'sales',
+      'products',
+      'backup',
+      'restore',
+      'bulk-action',
+      'task',
+      'route',
+      'saved-view',
+      'sync',
+      'campaign'
+    ])
+    .catch('backup'),
   timestamp: z.number().catch(Date.now()),
-  summary: z.string().catch('')
+  summary: z.string().catch(''),
+  clientId: z.string().optional(),
+  entityId: z.string().optional(),
+  entityKind: z
+    .enum(['client', 'task', 'route', 'saved-view', 'campaign', 'system'])
+    .optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional()
 });
 
 const bracketSchema = z.object({
@@ -120,7 +154,11 @@ const templateSchema = z.object({
   name: z.string().catch('Template'),
   description: z.string().catch(''),
   message: z.string().catch(''),
-  kind: z.enum(['reactivation', 'progress', 'route', 'freeform']).catch('freeform')
+  category: z
+    .enum(['reativacao', 'progresso', 'rota', 'cobranca-leve', 'follow-up', 'livre'])
+    .optional(),
+  kind: z.enum(['reactivation', 'progress', 'route', 'freeform']).optional(),
+  enabled: z.boolean().catch(true)
 });
 
 const thresholdSchema = z.object({
@@ -136,25 +174,97 @@ const settingsSchema = z.object({
   commercialBrackets: z.array(bracketSchema).catch(DEFAULT_COMMERCIAL_BRACKETS),
   whatsappTemplates: z.array(templateSchema).catch(DEFAULT_WHATSAPP_TEMPLATES),
   thresholds: thresholdSchema.catch(DEFAULT_THRESHOLDS),
-  timezone: z.string().catch(DEFAULT_SETTINGS.timezone)
+  timezone: z.string().catch(DEFAULT_SETTINGS.timezone),
+  maxBackups: z.number().catch(MAX_BACKUPS),
+  defaultImportMergePolicy: z.enum(['ignore', 'merge', 'replace']).catch(DEFAULT_IMPORT_MERGE_POLICY)
+});
+
+const taskSchema = z.object({
+  id: z.string().optional(),
+  clientId: z.string().catch(''),
+  title: z.string().catch('Nova tarefa'),
+  kind: z
+    .enum(['retorno', 'whatsapp', 'visita', 'rota', 'pendencia', 'follow-up'])
+    .catch('retorno'),
+  dueAt: z.string().catch(() => new Date().toISOString()),
+  status: z.enum(['open', 'done', 'canceled']).catch('open'),
+  notes: z.string().optional(),
+  priority: z.enum(['baixa', 'media', 'alta', 'urgente']).catch('media'),
+  createdAt: z.number().catch(Date.now()),
+  completedAt: z.number().optional()
+});
+
+const savedViewSchema = z.object({
+  id: z.string().optional(),
+  scope: z.enum(['clients', 'routes', 'worklists']).catch('clients'),
+  label: z.string().catch('Nova vista'),
+  filters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])).catch({}),
+  sort: z.string().catch('recent'),
+  createdAt: z.number().catch(Date.now())
+});
+
+const syncLedgerSchema = z.object({
+  lastSuccessfulSyncAt: z.string().nullable().catch(null),
+  dirtyClients: z.record(z.string(), z.enum(['upsert', 'delete'])).catch({}),
+  dirtyProducts: z.record(z.string(), z.enum(['upsert', 'delete'])).catch({}),
+  dirtyRoutes: z.record(z.string(), z.enum(['upsert', 'delete'])).catch({}),
+  dirtyTasks: z.record(z.string(), z.enum(['upsert', 'delete'])).catch({}),
+  dirtySavedViews: z.record(z.string(), z.enum(['upsert', 'delete'])).catch({}),
+  dirtySettings: z.boolean().catch(false),
+  lastError: z.string().nullable().catch(null)
 });
 
 const snapshotSchema = z.object({
   schemaVersion: z.number().catch(APP_SCHEMA_VERSION),
   clients: z.array(clientSchema).catch([]),
   products: z.array(productSchema).catch([]),
-  history: z.array(historySchema).catch([]),
   routes: z.array(routeSchema).catch([]),
   routeSelections: z.record(z.string(), z.record(z.string(), z.record(z.string(), z.boolean()))).catch({}),
   routeDates: z.record(z.string(), z.object({ deadline: z.string().catch(''), departure: z.string().catch('') })).catch({}),
-  salesGoals: z.record(z.string(), z.number()).catch({}),
+  tasks: z.array(taskSchema).catch([]),
+  savedViews: z.array(savedViewSchema).catch([]),
+  history: z.array(historySchema).catch([]),
   settings: settingsSchema.catch(DEFAULT_SETTINGS),
   meta: z
     .object({
       migratedFromLegacy: z.boolean().catch(false),
-      updatedAt: z.string().catch(() => new Date().toISOString())
+      updatedAt: z.string().catch(() => new Date().toISOString()),
+      syncLedger: syncLedgerSchema.catch({
+        lastSuccessfulSyncAt: null,
+        dirtyClients: {},
+        dirtyProducts: {},
+        dirtyRoutes: {},
+        dirtyTasks: {},
+        dirtySavedViews: {},
+        dirtySettings: false,
+        lastError: null
+      })
     })
-    .catch({ migratedFromLegacy: false, updatedAt: new Date().toISOString() })
+    .catch({
+      migratedFromLegacy: false,
+      updatedAt: new Date().toISOString(),
+      syncLedger: {
+        lastSuccessfulSyncAt: null,
+        dirtyClients: {},
+        dirtyProducts: {},
+        dirtyRoutes: {},
+        dirtyTasks: {},
+        dirtySavedViews: {},
+        dirtySettings: false,
+        lastError: null
+      }
+    })
+});
+
+export const createEmptySyncLedger = (): SyncLedger => ({
+  lastSuccessfulSyncAt: null,
+  dirtyClients: {},
+  dirtyProducts: {},
+  dirtyRoutes: {},
+  dirtyTasks: {},
+  dirtySavedViews: {},
+  dirtySettings: false,
+  lastError: null
 });
 
 const normalizeNote = (raw: z.infer<typeof noteSchema>): Note => ({
@@ -209,7 +319,12 @@ export const normalizeClient = (raw: unknown): Client => {
     notes: parsed.notes.map(normalizeNote),
     contacts: parsed.contacts.map(normalizeContact),
     importId: parsed.importId,
-    manualRouteId: parsed.manualRouteId
+    manualRouteId: parsed.manualRouteId,
+    stage: parsed.stage || 'ativo',
+    priority: parsed.priority || 'media',
+    tags: [...new Set(parsed.tags.map((tag) => tag.trim()).filter(Boolean))],
+    preferredChannel: parsed.preferredChannel || 'whatsapp',
+    nextActionId: parsed.nextActionId
   };
 };
 
@@ -239,13 +354,45 @@ export const normalizeRoute = (raw: unknown): RouteDefinition => {
   };
 };
 
-export const normalizeHistoryEntry = (raw: unknown): ImportHistoryEntry => {
+export const normalizeHistoryEntry = (raw: unknown): HistoryEntry => {
   const parsed = historySchema.parse(raw);
   return {
     id: parsed.id ?? createId('history'),
     type: parsed.type,
     timestamp: parsed.timestamp,
-    summary: parsed.summary
+    summary: parsed.summary,
+    clientId: parsed.clientId,
+    entityId: parsed.entityId,
+    entityKind: parsed.entityKind,
+    metadata: parsed.metadata
+  };
+};
+
+export const normalizeTask = (raw: unknown): ClientTask => {
+  const parsed = taskSchema.parse(raw);
+  return {
+    id: parsed.id ?? createId('task'),
+    clientId: parsed.clientId,
+    title: parsed.title,
+    kind: parsed.kind,
+    dueAt: parsed.dueAt,
+    status: parsed.status,
+    notes: parsed.notes,
+    priority: parsed.priority,
+    createdAt: parsed.createdAt,
+    completedAt: parsed.completedAt
+  };
+};
+
+export const normalizeSavedView = (raw: unknown): SavedView => {
+  const parsed = savedViewSchema.parse(raw);
+  return {
+    id: parsed.id ?? createId('view'),
+    scope: parsed.scope,
+    label: parsed.label,
+    filters: parsed.filters,
+    sort: parsed.sort,
+    createdAt: parsed.createdAt
   };
 };
 
@@ -261,24 +408,29 @@ const normalizeBrackets = (
       max: item.max,
       color: item.color,
       order: item.order || index + 1
-    }) as MonthlyCommercialBracket)
+    }))
     .sort((a, b) => a.order - b.order);
+};
+
+const legacyTemplateCategoryMap: Record<string, WhatsAppTemplate['category']> = {
+  reactivation: 'reativacao',
+  progress: 'progresso',
+  route: 'rota',
+  freeform: 'livre'
 };
 
 const normalizeTemplates = (
   value: Array<z.infer<typeof templateSchema>> | undefined
 ): WhatsAppTemplate[] => {
   const parsed = value?.map((item) => templateSchema.parse(item)) ?? DEFAULT_WHATSAPP_TEMPLATES;
-  return parsed.map(
-    (item, index) =>
-      ({
-        id: item.id ?? `template-${index + 1}`,
-        name: item.name,
-        description: item.description,
-        message: item.message,
-        kind: item.kind
-      }) as WhatsAppTemplate
-  );
+  return parsed.map((item, index) => ({
+    id: item.id ?? `template-${index + 1}`,
+    name: item.name,
+    description: item.description,
+    message: item.message,
+    category: item.category ?? legacyTemplateCategoryMap[item.kind ?? 'freeform'] ?? 'livre',
+    enabled: item.enabled
+  }));
 };
 
 export const normalizeSettings = (raw: Partial<AppSettings> | undefined): AppSettings => {
@@ -304,7 +456,9 @@ export const normalizeSettings = (raw: Partial<AppSettings> | undefined): AppSet
       ...DEFAULT_THRESHOLDS,
       ...parsed.thresholds
     },
-    timezone: parsed.timezone || DEFAULT_SETTINGS.timezone
+    timezone: parsed.timezone || DEFAULT_SETTINGS.timezone,
+    maxBackups: parsed.maxBackups || MAX_BACKUPS,
+    defaultImportMergePolicy: parsed.defaultImportMergePolicy || DEFAULT_IMPORT_MERGE_POLICY
   };
 };
 
@@ -312,15 +466,17 @@ export const createEmptySnapshot = (): AppSnapshot => ({
   schemaVersion: APP_SCHEMA_VERSION,
   clients: [],
   products: [],
-  history: [],
   routes: [],
   routeSelections: {},
   routeDates: {},
-  salesGoals: {},
+  tasks: [],
+  savedViews: [],
+  history: [],
   settings: normalizeSettings(undefined),
   meta: {
     migratedFromLegacy: false,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    syncLedger: createEmptySyncLedger()
   }
 });
 
@@ -330,15 +486,17 @@ export const normalizeSnapshot = (raw: unknown): AppSnapshot => {
     schemaVersion: APP_SCHEMA_VERSION,
     clients: parsed.clients.map(normalizeClient),
     products: parsed.products.map(normalizeProduct),
-    history: parsed.history.map(normalizeHistoryEntry),
     routes: parsed.routes.map(normalizeRoute),
     routeSelections: parsed.routeSelections,
     routeDates: parsed.routeDates,
-    salesGoals: parsed.salesGoals,
+    tasks: parsed.tasks.map(normalizeTask),
+    savedViews: parsed.savedViews.map(normalizeSavedView),
+    history: parsed.history.map(normalizeHistoryEntry),
     settings: normalizeSettings(parsed.settings as unknown as Partial<AppSettings>),
     meta: {
-      migratedFromLegacy: parsed.meta.migratedFromLegacy,
-      updatedAt: new Date().toISOString()
+      migratedFromLegacy: parsed.meta.migratedFromLegacy || parsed.schemaVersion < APP_SCHEMA_VERSION,
+      updatedAt: new Date().toISOString(),
+      syncLedger: syncLedgerSchema.parse(parsed.meta.syncLedger)
     }
   };
 };
@@ -346,8 +504,9 @@ export const normalizeSnapshot = (raw: unknown): AppSnapshot => {
 export const snapshotHasData = (snapshot: AppSnapshot) =>
   snapshot.clients.length > 0 ||
   snapshot.products.length > 0 ||
-  snapshot.history.length > 0 ||
   snapshot.routes.length > 0 ||
+  snapshot.tasks.length > 0 ||
+  snapshot.savedViews.length > 0 ||
+  snapshot.history.length > 0 ||
   Object.keys(snapshot.routeSelections).length > 0 ||
-  Object.keys(snapshot.routeDates).length > 0 ||
-  Object.keys(snapshot.salesGoals).length > 0;
+  Object.keys(snapshot.routeDates).length > 0;

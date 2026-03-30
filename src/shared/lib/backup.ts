@@ -2,7 +2,7 @@ import { createId } from '@/shared/lib/utils';
 import { createBackupRecord } from '@/shared/lib/db';
 import type { AppSnapshot, BackupRecord } from '@/shared/types/domain';
 
-export const persistBackup = async (snapshot: AppSnapshot, reason: string) => {
+export const persistBackup = async (snapshot: AppSnapshot, reason: string, maxBackups?: number) => {
   const record: BackupRecord = {
     id: createId('backup'),
     createdAt: Date.now(),
@@ -10,6 +10,6 @@ export const persistBackup = async (snapshot: AppSnapshot, reason: string) => {
     snapshot
   };
 
-  await createBackupRecord(record);
+  await createBackupRecord(record, maxBackups);
   return record;
 };

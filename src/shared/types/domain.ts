@@ -12,7 +12,46 @@ export type CloudPermission = 'signed-out' | 'checking' | 'blocked' | 'admin';
 
 export type RouteFrequencyType = 'semanal' | 'quinzenal' | 'mensal' | 'personalizado';
 
-export type ImportKind = 'clients' | 'sales' | 'products' | 'backup' | 'restore';
+export type ImportKind =
+  | 'clients'
+  | 'sales'
+  | 'products'
+  | 'backup'
+  | 'restore'
+  | 'bulk-action'
+  | 'task'
+  | 'route'
+  | 'saved-view'
+  | 'sync'
+  | 'campaign';
+
+export type ImportMergePolicy = 'ignore' | 'merge' | 'replace';
+
+export type ClientStage =
+  | 'ativo'
+  | 'reativar'
+  | 'negociando'
+  | 'aguardando'
+  | 'sem-rota'
+  | 'prioritario';
+
+export type ClientPriority = 'baixa' | 'media' | 'alta' | 'urgente';
+
+export type TaskStatus = 'open' | 'done' | 'canceled';
+
+export type TaskKind =
+  | 'retorno'
+  | 'whatsapp'
+  | 'visita'
+  | 'rota'
+  | 'pendencia'
+  | 'follow-up';
+
+export type SavedViewScope = 'clients' | 'routes' | 'worklists';
+
+export type SyncOperation = 'upsert' | 'delete';
+
+export type HistoryEntityKind = 'client' | 'task' | 'route' | 'saved-view' | 'campaign' | 'system';
 
 export type ClientSignalId =
   | 'sem-telefone'
@@ -22,7 +61,30 @@ export type ClientSignalId =
   | 'perto-da-proxima-tabela'
   | 'mudou-de-tabela'
   | 'saida-de-rota-proxima'
-  | 'dados-incompletos';
+  | 'dados-incompletos'
+  | 'tarefa-vencida'
+  | 'cliente-prioritario'
+  | 'aguardando-retorno';
+
+export type WorklistSignal =
+  | ClientSignalId
+  | 'fora-da-malha'
+  | 'rota-sem-cobertura';
+
+export type TimelineEventType =
+  | 'sale'
+  | 'note'
+  | 'contact'
+  | 'task'
+  | 'history';
+
+export type WhatsAppTemplateCategory =
+  | 'reativacao'
+  | 'progresso'
+  | 'rota'
+  | 'cobranca-leve'
+  | 'follow-up'
+  | 'livre';
 
 export interface Note {
   id: string;
@@ -82,6 +144,11 @@ export interface Client {
   importId?: string;
   manualRouteId?: string;
   route?: ClientRouteInfo;
+  stage: ClientStage;
+  priority: ClientPriority;
+  tags: string[];
+  preferredChannel: ContactChannel;
+  nextActionId?: string;
 }
 
 export interface Product {
@@ -115,8 +182,6 @@ export type MonthlyRouteSelections = Record<string, Record<string, Record<string
 
 export type MonthlyRouteDates = Record<string, RouteDates>;
 
-export type SalesGoals = Record<string, number>;
-
 export interface TierDefinition {
   level: number;
   name: string;
@@ -137,7 +202,8 @@ export interface WhatsAppTemplate {
   name: string;
   description: string;
   message: string;
-  kind: 'reactivation' | 'progress' | 'route' | 'freeform';
+  category: WhatsAppTemplateCategory;
+  enabled: boolean;
 }
 
 export interface ThresholdSettings {
@@ -154,28 +220,69 @@ export interface AppSettings {
   whatsappTemplates: WhatsAppTemplate[];
   thresholds: ThresholdSettings;
   timezone: string;
+  maxBackups: number;
+  defaultImportMergePolicy: ImportMergePolicy;
 }
 
-export interface ImportHistoryEntry {
+export interface HistoryEntry {
   id: string;
   type: ImportKind;
   timestamp: number;
   summary: string;
+  clientId?: string;
+  entityId?: string;
+  entityKind?: HistoryEntityKind;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface ClientTask {
+  id: string;
+  clientId: string;
+  title: string;
+  kind: TaskKind;
+  dueAt: string;
+  status: TaskStatus;
+  notes?: string;
+  priority: ClientPriority;
+  createdAt: number;
+  completedAt?: number;
+}
+
+export interface SavedView {
+  id: string;
+  scope: SavedViewScope;
+  label: string;
+  filters: Record<string, string | number | boolean | string[] | null>;
+  sort: string;
+  createdAt: number;
+}
+
+export interface SyncLedger {
+  lastSuccessfulSyncAt: string | null;
+  dirtyClients: Record<string, SyncOperation>;
+  dirtyProducts: Record<string, SyncOperation>;
+  dirtyRoutes: Record<string, SyncOperation>;
+  dirtyTasks: Record<string, SyncOperation>;
+  dirtySavedViews: Record<string, SyncOperation>;
+  dirtySettings: boolean;
+  lastError: string | null;
 }
 
 export interface AppSnapshot {
   schemaVersion: number;
   clients: Client[];
   products: Product[];
-  history: ImportHistoryEntry[];
   routes: RouteDefinition[];
   routeSelections: MonthlyRouteSelections;
   routeDates: MonthlyRouteDates;
-  salesGoals: SalesGoals;
+  tasks: ClientTask[];
+  savedViews: SavedView[];
+  history: HistoryEntry[];
   settings: AppSettings;
   meta: {
     migratedFromLegacy: boolean;
     updatedAt: string;
+    syncLedger: SyncLedger;
   };
 }
 
@@ -230,12 +337,23 @@ export interface DashboardSummary {
   avgTicket: number;
   clientsNearNextBracket: number;
   staleClients: number;
+  atRiskClients: number;
+  overdueTasks: number;
 }
 
 export interface WorklistItem {
-  id: string;
+  id: WorklistSignal;
   title: string;
   description: string;
-  signal: ClientSignalId;
+  signal: WorklistSignal;
   clients: Client[];
+}
+
+export interface ClientTimelineEvent {
+  id: string;
+  timestamp: number;
+  type: TimelineEventType;
+  title: string;
+  detail: string;
+  tone: 'neutral' | 'warning' | 'danger' | 'success' | 'info';
 }
