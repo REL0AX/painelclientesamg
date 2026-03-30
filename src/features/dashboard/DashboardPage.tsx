@@ -48,8 +48,16 @@ export function DashboardPage() {
                   <h3 className="text-xl font-semibold text-[var(--ink-900)]">{worklist.title}</h3>
                   <p className="mt-2 text-sm text-[var(--ink-600)]">{worklist.description}</p>
                 </div>
-                <div className="rounded-full bg-[var(--panel-subtle)] px-3 py-1 text-sm font-semibold text-[var(--ink-900)]">
-                  {worklist.clients.length}
+                <div className="flex flex-col items-end gap-2">
+                  <div className="rounded-full bg-[var(--panel-subtle)] px-3 py-1 text-sm font-semibold text-[var(--ink-900)]">
+                    {worklist.clients.length}
+                  </div>
+                  <Link
+                    to={`/clientes?signal=${worklist.signal}`}
+                    className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent-600)]"
+                  >
+                    abrir filtro
+                  </Link>
                 </div>
               </div>
               <div className="mt-4 grid gap-3">

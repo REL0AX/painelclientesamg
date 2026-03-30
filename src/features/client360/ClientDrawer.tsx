@@ -25,6 +25,7 @@ export function ClientDrawer() {
   const {
     snapshot,
     selectedClientId,
+    selectedClientIds,
     openClient,
     saveClient,
     deleteClient,
@@ -109,6 +110,23 @@ export function ClientDrawer() {
         .sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt)),
     [client?.id, snapshot.tasks]
   );
+  const selectionNavigation = useMemo(() => {
+    if (!client || selectedClientIds.length < 2) {
+      return null;
+    }
+
+    const currentIndex = selectedClientIds.indexOf(client.id);
+    if (currentIndex < 0) {
+      return null;
+    }
+
+    return {
+      currentIndex,
+      total: selectedClientIds.length,
+      previousId: selectedClientIds[currentIndex - 1] ?? null,
+      nextId: selectedClientIds[currentIndex + 1] ?? null
+    };
+  }, [client, selectedClientIds]);
 
   if (!client) {
     return null;
@@ -190,6 +208,16 @@ export function ClientDrawer() {
               <MessageCircle className="mr-2 h-4 w-4" />
               WhatsApp
             </Button>
+            {selectionNavigation ? (
+              <>
+                <Button variant="secondary" onClick={() => selectionNavigation.previousId && openClient(selectionNavigation.previousId)} disabled={!selectionNavigation.previousId}>
+                  Anterior
+                </Button>
+                <Button variant="secondary" onClick={() => selectionNavigation.nextId && openClient(selectionNavigation.nextId)} disabled={!selectionNavigation.nextId}>
+                  Proximo
+                </Button>
+              </>
+            ) : null}
             <Button variant="secondary" onClick={() => setActiveTab('edicao')}>
               <Save className="mr-2 h-4 w-4" />
               Editar cadastro
@@ -199,6 +227,11 @@ export function ClientDrawer() {
               Tarefas
             </Button>
           </div>
+          {selectionNavigation ? (
+            <p className="mt-3 text-xs uppercase tracking-[0.18em] text-[var(--ink-500)]">
+              Cliente {selectionNavigation.currentIndex + 1} de {selectionNavigation.total} na selecao atual
+            </p>
+          ) : null}
 
           <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="mt-8">
             <Tabs.List className="hide-scrollbar flex gap-2 overflow-x-auto rounded-[24px] border border-[var(--line)] bg-white p-2">

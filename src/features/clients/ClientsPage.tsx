@@ -1,30 +1,17 @@
 import { useDeferredValue, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Download, Layers3, Save, Tags, Trash2 } from 'lucide-react';
 import { useAppContext } from '@/app/state/AppContext';
 import { ClientListItem } from '@/features/clients/ClientListItem';
 import { useClientSearchResults } from '@/features/search/useClientSearchResults';
-import { clientSignals } from '@/shared/lib/analytics';
+import { clientSelectionForSignal, clientSignals } from '@/shared/lib/analytics';
 import { downloadCsv } from '@/shared/lib/export';
 import { Button } from '@/shared/ui/Button';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { FieldLabel, Input, Select } from '@/shared/ui/Field';
 import type { SavedView } from '@/shared/types/domain';
 
-type ClientFilterState = {
-  route: string;
-  signal: string;
-  stage: string;
-  priority: string;
-  name: string;
-};
-
-const defaultFilters: ClientFilterState = {
-  route: 'all',
-  signal: 'all',
-  stage: 'all',
-  priority: 'all',
-  name: ''
-};
+const paramValue = (value: string | null) => value ?? 'all';
 
 export function ClientsPage() {
   const {
@@ -34,6 +21,7 @@ export function ClientsPage() {
     selectedClientIds,
     toggleClientSelection,
     clearClientSelection,
+    setSelectedClientIds,
     saveSavedView,
     deleteSavedView,
     applyStageToClients,
@@ -42,15 +30,46 @@ export function ClientsPage() {
     assignRouteToClients,
     createTaskForClients
   } = useAppContext();
+  const [searchParams, setSearchParams] = useSearchParams();
   const searchResults = useClientSearchResults();
-  const [filters, setFilters] = useState<ClientFilterState>(defaultFilters);
   const [viewLabel, setViewLabel] = useState('');
   const [bulkStage, setBulkStage] = useState('ativo');
   const [bulkPriority, setBulkPriority] = useState('media');
   const [bulkRouteId, setBulkRouteId] = useState('automatic');
   const [bulkTags, setBulkTags] = useState('');
   const [bulkTaskTitle, setBulkTaskTitle] = useState('');
+
+  const filters = {
+    route: paramValue(searchParams.get('route')),
+    signal: paramValue(searchParams.get('signal')),
+    stage: paramValue(searchParams.get('stage')),
+    priority: paramValue(searchParams.get('priority')),
+    name: searchParams.get('q') ?? ''
+  };
+
   const deferredNameFilter = useDeferredValue(filters.name);
+  const specialSignalSelection = useMemo(() => {
+    if (filters.signal === 'fora-da-malha' || filters.signal === 'rota-sem-cobertura') {
+      return new Set(
+        clientSelectionForSignal(snapshot, filters.signal, selectedYear, selectedMonth).map((client) => client.id)
+      );
+    }
+    return null;
+  }, [filters.signal, selectedMonth, selectedYear, snapshot]);
+
+  const updateParams = (next: Partial<typeof filters>) => {
+    const params = new URLSearchParams(searchParams);
+    Object.entries(next).forEach(([key, value]) => {
+      if (!value || value === 'all') {
+        params.delete(key === 'name' ? 'q' : key);
+      } else {
+        params.set(key === 'name' ? 'q' : key, value);
+      }
+    });
+    setSearchParams(params, {
+      replace: true
+    });
+  };
 
   const filteredClients = useMemo(() => {
     return searchResults.filter((client) => {
@@ -62,16 +81,31 @@ export function ClientsPage() {
       const matchesStage = filters.stage === 'all' || client.stage === filters.stage;
       const matchesPriority = filters.priority === 'all' || client.priority === filters.priority;
       const signals = clientSignals(client, snapshot, selectedYear, selectedMonth);
-      const matchesSignal = filters.signal === 'all' || signals.some((signal) => signal.id === filters.signal);
+      const matchesSignal =
+        filters.signal === 'all' ||
+        (specialSignalSelection
+          ? specialSignalSelection.has(client.id)
+          : signals.some((signal) => signal.id === filters.signal));
       return matchesName && matchesRoute && matchesSignal && matchesStage && matchesPriority;
     });
-  }, [deferredNameFilter, filters.priority, filters.route, filters.signal, filters.stage, searchResults, selectedMonth, selectedYear, snapshot]);
+  }, [
+    deferredNameFilter,
+    filters.priority,
+    filters.route,
+    filters.signal,
+    filters.stage,
+    searchResults,
+    selectedMonth,
+    selectedYear,
+    specialSignalSelection,
+    snapshot
+  ]);
 
   const savedClientViews = snapshot.savedViews.filter((view) => view.scope === 'clients');
   const selectedSet = new Set(selectedClientIds);
 
   const applySavedView = (view: SavedView) => {
-    setFilters({
+    updateParams({
       route: String(view.filters.route ?? 'all'),
       signal: String(view.filters.signal ?? 'all'),
       stage: String(view.filters.stage ?? 'all'),
@@ -136,13 +170,13 @@ export function ClientsPage() {
           <FieldLabel>Filtro por nome</FieldLabel>
           <Input
             value={filters.name}
-            onChange={(event) => setFilters((current) => ({ ...current, name: event.target.value }))}
+            onChange={(event) => updateParams({ name: event.target.value })}
             placeholder="Nome ou codigo"
           />
         </div>
         <div>
           <FieldLabel>Rota</FieldLabel>
-          <Select value={filters.route} onChange={(event) => setFilters((current) => ({ ...current, route: event.target.value }))}>
+          <Select value={filters.route} onChange={(event) => updateParams({ route: event.target.value })}>
             <option value="all">Todas</option>
             {snapshot.routes.map((route) => (
               <option key={route.id} value={route.id}>
@@ -153,7 +187,7 @@ export function ClientsPage() {
         </div>
         <div>
           <FieldLabel>Sinal</FieldLabel>
-          <Select value={filters.signal} onChange={(event) => setFilters((current) => ({ ...current, signal: event.target.value }))}>
+          <Select value={filters.signal} onChange={(event) => updateParams({ signal: event.target.value })}>
             <option value="all">Todos</option>
             <option value="sem-compra-recente">Sem compra recente</option>
             <option value="em-risco">Em risco</option>
@@ -163,11 +197,14 @@ export function ClientsPage() {
             <option value="saida-de-rota-proxima">Saida de rota proxima</option>
             <option value="tarefa-vencida">Tarefa vencida</option>
             <option value="cliente-prioritario">Cliente prioritario</option>
+            <option value="aguardando-retorno">Aguardando retorno</option>
+            <option value="fora-da-malha">Fora da malha</option>
+            <option value="rota-sem-cobertura">Rota sem cobertura</option>
           </Select>
         </div>
         <div>
           <FieldLabel>Estagio</FieldLabel>
-          <Select value={filters.stage} onChange={(event) => setFilters((current) => ({ ...current, stage: event.target.value }))}>
+          <Select value={filters.stage} onChange={(event) => updateParams({ stage: event.target.value })}>
             <option value="all">Todos</option>
             <option value="ativo">Ativo</option>
             <option value="reativar">Reativar</option>
@@ -179,7 +216,7 @@ export function ClientsPage() {
         </div>
         <div>
           <FieldLabel>Prioridade</FieldLabel>
-          <Select value={filters.priority} onChange={(event) => setFilters((current) => ({ ...current, priority: event.target.value }))}>
+          <Select value={filters.priority} onChange={(event) => updateParams({ priority: event.target.value })}>
             <option value="all">Todas</option>
             <option value="baixa">Baixa</option>
             <option value="media">Media</option>
@@ -247,9 +284,18 @@ export function ClientsPage() {
               <h2 className="mt-2 text-2xl font-bold text-[var(--ink-900)]">{selectedClientIds.length} selecionados</h2>
               <p className="mt-2 text-sm text-[var(--ink-600)]">Mude estagio, prioridade, rota, tags e tarefas em lote.</p>
             </div>
-            <Button variant="ghost" onClick={clearClientSelection}>
-              Limpar selecao
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setSelectedClientIds(filteredClients.map((client) => client.id))}>
+                Selecionar visiveis
+              </Button>
+              <Button variant="ghost" onClick={clearClientSelection}>
+                Limpar selecao
+              </Button>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] bg-[var(--panel-subtle)] px-4 py-3 text-sm text-[var(--ink-700)]">
+            {filteredClients.length} clientes no filtro atual. Os filtros desta tela ficam refletidos na URL para navegar entre worklists e atalhos sem perder contexto.
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -338,4 +384,3 @@ export function ClientsPage() {
     </div>
   );
 }
-
