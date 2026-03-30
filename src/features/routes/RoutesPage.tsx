@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, ScanSearch } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAppContext } from '@/app/state/AppContext';
 import { worklistsForSnapshot } from '@/shared/lib/analytics';
 import { resolveCommercialContext } from '@/shared/lib/commercial';
@@ -310,7 +311,12 @@ export function RoutesPage() {
 
           <div className="grid gap-4 xl:grid-cols-2">
             <div className="rounded-[24px] border border-[var(--line)] bg-white p-4">
-              <p className="font-semibold text-[var(--ink-900)]">Clientes fora da malha</p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-semibold text-[var(--ink-900)]">Clientes fora da malha</p>
+                <Link to="/clientes?signal=fora-da-malha" className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent-600)]">
+                  ver lista
+                </Link>
+              </div>
               <div className="mt-3 space-y-2">
                 {outsideCoverage.slice(0, 6).map((client) => (
                   <div key={client.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--panel-subtle)] px-3 py-3">
@@ -330,7 +336,15 @@ export function RoutesPage() {
             </div>
 
             <div className="rounded-[24px] border border-[var(--line)] bg-white p-4">
-              <p className="font-semibold text-[var(--ink-900)]">Rotas sem cobertura</p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-semibold text-[var(--ink-900)]">Rotas sem cobertura</p>
+                <Link
+                  to="/clientes?signal=rota-sem-cobertura"
+                  className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--accent-600)]"
+                >
+                  ver lista
+                </Link>
+              </div>
               <div className="mt-3 space-y-2">
                 {routesWithoutCoverage.slice(0, 6).map((client) => (
                   <div key={client.id} className="rounded-2xl bg-[var(--panel-subtle)] px-3 py-3">
