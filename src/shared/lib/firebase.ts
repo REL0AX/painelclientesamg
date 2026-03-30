@@ -16,11 +16,16 @@ import {
   getFirestore,
   serverTimestamp,
   writeBatch,
-  type Firestore
+  type Firestore,
+  type WriteBatch
 } from 'firebase/firestore';
 import { cloudServicesReady, firebaseConfig, panelCloudConfig } from '@/shared/lib/cloud-config';
 import { normalizeSnapshot } from '@/shared/lib/normalize';
-import type { AppSnapshot, CloudUser } from '@/shared/types/domain';
+import type {
+  AppSnapshot,
+  CloudUser,
+  SyncLedger
+} from '@/shared/types/domain';
 
 let authInstance: Auth | null = null;
 let dbInstance: Firestore | null = null;
@@ -82,89 +87,140 @@ export const checkPanelAdminAccess = async (uid: string) => {
 
 export const loadCloudSnapshot = async () => {
   const { db } = ensureServices();
-  const metaRef = doc(db, 'panels', panelCloudConfig.panelId, 'meta', 'config');
-  const clientsRef = collection(db, 'panels', panelCloudConfig.panelId, 'clients');
-  const productsRef = collection(db, 'panels', panelCloudConfig.panelId, 'products');
+  const panelRoot = ['panels', panelCloudConfig.panelId] as const;
+  const metaRef = doc(db, ...panelRoot, 'meta', 'config');
+  const clientsRef = collection(db, ...panelRoot, 'clients');
+  const productsRef = collection(db, ...panelRoot, 'products');
+  const tasksRef = collection(db, ...panelRoot, 'tasks');
+  const savedViewsRef = collection(db, ...panelRoot, 'savedViews');
 
-  const [metaSnap, clientDocs, productDocs] = await Promise.all([
+  const [metaSnap, clientDocs, productDocs, taskDocs, savedViewDocs] = await Promise.all([
     getDoc(metaRef),
     getDocs(clientsRef),
-    getDocs(productsRef)
+    getDocs(productsRef),
+    getDocs(tasksRef),
+    getDocs(savedViewsRef)
   ]);
 
   const metaData = metaSnap.exists() ? metaSnap.data() : {};
   return normalizeSnapshot({
     clients: clientDocs.docs.map((entry) => ({ id: entry.id, ...entry.data() })),
     products: productDocs.docs.map((entry) => ({ id: entry.id, ...entry.data() })),
+    tasks: taskDocs.docs.map((entry) => ({ id: entry.id, ...entry.data() })),
+    savedViews: savedViewDocs.docs.map((entry) => ({ id: entry.id, ...entry.data() })),
     history: metaData.history ?? [],
     routes: metaData.routes ?? [],
     routeSelections: metaData.routeSelections ?? {},
     routeDates: metaData.routeDates ?? {},
-    salesGoals: metaData.salesGoals ?? {},
     settings: metaData.settings ?? {},
     meta: {
       migratedFromLegacy: false,
       updatedAt:
         typeof metaData.updatedAt?.toDate === 'function'
           ? metaData.updatedAt.toDate().toISOString()
-          : new Date().toISOString()
+          : new Date().toISOString(),
+      syncLedger: {
+        lastSuccessfulSyncAt:
+          typeof metaData.updatedAt?.toDate === 'function'
+            ? metaData.updatedAt.toDate().toISOString()
+            : null,
+        dirtyClients: {},
+        dirtyProducts: {},
+        dirtyRoutes: {},
+        dirtyTasks: {},
+        dirtySavedViews: {},
+        dirtySettings: false,
+        lastError: null
+      }
     }
   });
 };
 
-export const saveCloudSnapshot = async (snapshot: AppSnapshot, user: CloudUser) => {
+const createFullLedger = (snapshot: AppSnapshot): SyncLedger => ({
+  lastSuccessfulSyncAt: snapshot.meta.syncLedger.lastSuccessfulSyncAt,
+  dirtyClients: Object.fromEntries(snapshot.clients.map((client) => [client.id, 'upsert'] as const)),
+  dirtyProducts: Object.fromEntries(snapshot.products.map((product) => [product.id, 'upsert'] as const)),
+  dirtyRoutes: Object.fromEntries(snapshot.routes.map((route) => [route.id, 'upsert'] as const)),
+  dirtyTasks: Object.fromEntries(snapshot.tasks.map((task) => [task.id, 'upsert'] as const)),
+  dirtySavedViews: Object.fromEntries(snapshot.savedViews.map((view) => [view.id, 'upsert'] as const)),
+  dirtySettings: true,
+  lastError: null
+});
+
+const applyCollectionChanges = <T extends { id: string }>(
+  batch: WriteBatch,
+  db: Firestore,
+  pathSegments: readonly [string, string, string],
+  entities: T[],
+  dirtyEntries: Record<string, 'upsert' | 'delete'>
+) => {
+  const entityMap = new Map(entities.map((entity) => [entity.id, entity]));
+  Object.entries(dirtyEntries).forEach(([id, operation]) => {
+    const docRef = doc(db, pathSegments[0], pathSegments[1], pathSegments[2], id);
+    if (operation === 'delete') {
+      batch.delete(docRef);
+      return;
+    }
+
+    const entity = entityMap.get(id);
+    if (entity) {
+      batch.set(docRef, entity);
+    }
+  });
+};
+
+export const saveCloudSnapshot = async (
+  snapshot: AppSnapshot,
+  user: CloudUser,
+  options?: { forceFull?: boolean }
+) => {
   const { db } = ensureServices();
+  const ledger = options?.forceFull ? createFullLedger(snapshot) : snapshot.meta.syncLedger;
+  const hasChanges =
+    ledger.dirtySettings ||
+    Object.keys(ledger.dirtyClients).length > 0 ||
+    Object.keys(ledger.dirtyProducts).length > 0 ||
+    Object.keys(ledger.dirtyRoutes).length > 0 ||
+    Object.keys(ledger.dirtyTasks).length > 0 ||
+    Object.keys(ledger.dirtySavedViews).length > 0;
+
+  if (!hasChanges) {
+    return;
+  }
+
   const metaRef = doc(db, 'panels', panelCloudConfig.panelId, 'meta', 'config');
-  const clientsRef = collection(db, 'panels', panelCloudConfig.panelId, 'clients');
-  const productsRef = collection(db, 'panels', panelCloudConfig.panelId, 'products');
-
-  const [existingClientDocs, existingProductDocs] = await Promise.all([
-    getDocs(clientsRef),
-    getDocs(productsRef)
-  ]);
-
   const batch = writeBatch(db);
-  batch.set(
-    metaRef,
-    {
-      history: snapshot.history,
-      routes: snapshot.routes,
-      routeSelections: snapshot.routeSelections,
-      routeDates: snapshot.routeDates,
-      salesGoals: snapshot.salesGoals,
-      settings: snapshot.settings,
-      schemaVersion: snapshot.schemaVersion,
-      updatedAt: serverTimestamp(),
-      updatedBy: {
-        uid: user.uid,
-        email: user.email ?? null
-      }
-    },
-    { merge: true }
+
+  if (ledger.dirtySettings || Object.keys(ledger.dirtyRoutes).length > 0) {
+    batch.set(
+      metaRef,
+      {
+        history: snapshot.history,
+        routes: snapshot.routes,
+        routeSelections: snapshot.routeSelections,
+        routeDates: snapshot.routeDates,
+        settings: snapshot.settings,
+        schemaVersion: snapshot.schemaVersion,
+        updatedAt: serverTimestamp(),
+        updatedBy: {
+          uid: user.uid,
+          email: user.email ?? null
+        }
+      },
+      { merge: true }
+    );
+  }
+
+  applyCollectionChanges(batch, db, ['panels', panelCloudConfig.panelId, 'clients'], snapshot.clients, ledger.dirtyClients);
+  applyCollectionChanges(batch, db, ['panels', panelCloudConfig.panelId, 'products'], snapshot.products, ledger.dirtyProducts);
+  applyCollectionChanges(batch, db, ['panels', panelCloudConfig.panelId, 'tasks'], snapshot.tasks, ledger.dirtyTasks);
+  applyCollectionChanges(
+    batch,
+    db,
+    ['panels', panelCloudConfig.panelId, 'savedViews'],
+    snapshot.savedViews,
+    ledger.dirtySavedViews
   );
-
-  const nextClientIds = new Set(snapshot.clients.map((client) => client.id));
-  const nextProductIds = new Set(snapshot.products.map((product) => product.id));
-
-  snapshot.clients.forEach((client) => {
-    batch.set(doc(db, 'panels', panelCloudConfig.panelId, 'clients', client.id), client);
-  });
-
-  snapshot.products.forEach((product) => {
-    batch.set(doc(db, 'panels', panelCloudConfig.panelId, 'products', product.id), product);
-  });
-
-  existingClientDocs.docs.forEach((entry) => {
-    if (!nextClientIds.has(entry.id)) {
-      batch.delete(entry.ref);
-    }
-  });
-
-  existingProductDocs.docs.forEach((entry) => {
-    if (!nextProductIds.has(entry.id)) {
-      batch.delete(entry.ref);
-    }
-  });
 
   await batch.commit();
 };

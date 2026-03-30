@@ -24,11 +24,34 @@
 
 - O painel abre `wa.me` com mensagem pronta.
 - Nao existe envio por API nesta fase.
-- Cada abertura de template registra um evento `whatsapp-opened` no historico do cliente.
+- Existe uma tela de `Campanhas` para montar fila manual por worklist e template.
+- Cada abertura de template registra um evento `whatsapp-opened` no historico do cliente e na timeline.
+
+## CRM operacional
+
+- O cliente agora pode ser marcado por `estagio`, `prioridade`, `tags` e `canal preferido`.
+- A tela de `Clientes` permite bulk actions para:
+  - mudar estagio
+  - mudar prioridade
+  - aplicar tags
+  - ajustar rota manual
+  - criar tarefas em lote
+- A tela de `Tarefas` centraliza retornos, follow-ups e pendencias.
+- A `Visao 360` mostra timeline derivada, tarefas do cliente e edicao completa do cadastro.
+
+## Views salvas e diagnostico
+
+- Filtros importantes podem ser gravados em `views salvas` dentro da tela de clientes.
+- A tela de `Diagnostico` mostra:
+  - schema atual
+  - pendencias do sync
+  - estado da nuvem
+  - volume local de dados
+  - ultimo erro conhecido
 
 ## Backups
 
 - O app salva o snapshot atual em IndexedDB.
 - Operacoes destrutivas criam backup automatico antes da troca.
-- O historico local guarda ate 20 backups.
+- O historico local usa a retencao definida em Configuracoes.
 - Tambem e possivel exportar/importar JSON manualmente.

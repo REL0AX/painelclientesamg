@@ -47,5 +47,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Bundle budget
+        run: npm run check:bundle
+
       - name: Smoke tests
         run: npm run test:e2e

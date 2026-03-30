@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Download, ScanSearch } from 'lucide-react';
 import { useAppContext } from '@/app/state/AppContext';
+import { worklistsForSnapshot } from '@/shared/lib/analytics';
 import { resolveCommercialContext } from '@/shared/lib/commercial';
+import { downloadCsv } from '@/shared/lib/export';
 import { clientIsSelectedInRouteMonth } from '@/shared/lib/routes';
 import { monthKeyFor } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/Button';
@@ -25,7 +28,9 @@ export function RoutesPage() {
     saveRoute,
     deleteRoute,
     setRouteDates,
-    toggleRouteSelection
+    toggleRouteSelection,
+    openClient,
+    assignRouteToClients
   } = useAppContext();
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(snapshot.routes[0]?.id ?? null);
   const [routeForm, setRouteForm] = useState(emptyRouteForm);
@@ -37,14 +42,16 @@ export function RoutesPage() {
   }, [selectedRouteId, snapshot.routes]);
 
   const selectedRoute = snapshot.routes.find((route) => route.id === selectedRouteId) ?? null;
-  const commercialContext = resolveCommercialContext(
-    selectedYear,
-    selectedMonth,
-    snapshot.settings.timezone
-  );
+  const commercialContext = resolveCommercialContext(selectedYear, selectedMonth, snapshot.settings.timezone);
   const monthKey = monthKeyFor(commercialContext.year, commercialContext.month);
   const routeClients = snapshot.clients.filter((client) => client.route?.id === selectedRoute?.id);
   const routeDates = selectedRoute ? snapshot.routeDates[selectedRoute.id] : null;
+  const coverageWorklists = useMemo(
+    () => worklistsForSnapshot(snapshot, selectedYear, selectedMonth),
+    [selectedMonth, selectedYear, snapshot]
+  );
+  const outsideCoverage = coverageWorklists.find((item) => item.id === 'fora-da-malha')?.clients ?? [];
+  const routesWithoutCoverage = coverageWorklists.find((item) => item.id === 'rota-sem-cobertura')?.clients ?? [];
 
   useEffect(() => {
     if (!selectedRoute) {
@@ -79,6 +86,26 @@ export function RoutesPage() {
     };
     await saveRoute(route);
     setSelectedRouteId(route.id);
+  };
+
+  const exportRouteAgenda = () => {
+    if (!selectedRoute) {
+      return;
+    }
+
+    downloadCsv(
+      routeClients.map((client) => ({
+        cliente: client.nome,
+        codigo: client.codigo,
+        cidade: client.cidade,
+        uf: client.uf,
+        rota: selectedRoute.name,
+        prazo: routeDates?.deadline || '',
+        saida: routeDates?.departure || '',
+        selecionado_no_mes: clientIsSelectedInRouteMonth(snapshot.routeSelections, monthKey, selectedRoute.id, client.id) ? 'sim' : 'nao'
+      })),
+      `rota-${selectedRoute.name.toLowerCase().replace(/\s+/g, '-')}-${commercialContext.label}.csv`
+    );
   };
 
   return (
@@ -172,12 +199,20 @@ export function RoutesPage() {
 
       <div className="space-y-6">
         <Card className="space-y-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ink-500)]">Agenda da rota</p>
-            <h2 className="mt-2 text-2xl font-bold text-[var(--ink-900)]">{selectedRoute?.name ?? 'Selecione uma rota'}</h2>
-            <p className="mt-2 text-sm text-[var(--ink-600)]">
-              Prazo, saida e clientes sinalizados para {commercialContext.label}.
-            </p>
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ink-500)]">Agenda da rota</p>
+              <h2 className="mt-2 text-2xl font-bold text-[var(--ink-900)]">{selectedRoute?.name ?? 'Selecione uma rota'}</h2>
+              <p className="mt-2 text-sm text-[var(--ink-600)]">
+                Prazo, saida e clientes sinalizados para {commercialContext.label}.
+              </p>
+            </div>
+            {selectedRoute ? (
+              <Button variant="secondary" onClick={exportRouteAgenda}>
+                <Download className="mr-2 h-4 w-4" />
+                Exportar agenda
+              </Button>
+            ) : null}
           </div>
 
           {selectedRoute ? (
@@ -211,30 +246,50 @@ export function RoutesPage() {
                 </div>
               </div>
 
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    void Promise.all(routeClients.map((client) => toggleRouteSelection(selectedRoute.id, client.id, true)))
+                  }
+                >
+                  Marcar todos
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    void Promise.all(routeClients.map((client) => toggleRouteSelection(selectedRoute.id, client.id, false)))
+                  }
+                >
+                  Limpar todos
+                </Button>
+              </div>
+
               <div className="space-y-3">
                 {routeClients.length > 0 ? (
                   routeClients.map((client) => {
-                    const checked = clientIsSelectedInRouteMonth(
-                      snapshot.routeSelections,
-                      monthKey,
-                      selectedRoute.id,
-                      client.id
-                    );
+                    const checked = clientIsSelectedInRouteMonth(snapshot.routeSelections, monthKey, selectedRoute.id, client.id);
                     return (
-                      <label key={client.id} className="flex items-center justify-between gap-4 rounded-[22px] border border-[var(--line)] bg-white px-4 py-3">
+                      <div key={client.id} className="flex items-center justify-between gap-4 rounded-[22px] border border-[var(--line)] bg-white px-4 py-3">
                         <div>
                           <p className="font-semibold text-[var(--ink-900)]">{client.nome}</p>
                           <p className="text-sm text-[var(--ink-600)]">
                             {client.cidade || 'Sem cidade'} / {client.uf || '--'}
                           </p>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => void toggleRouteSelection(selectedRoute.id, client.id, event.target.checked)}
-                          className="h-5 w-5 rounded border-[var(--line)] text-[var(--accent-600)]"
-                        />
-                      </label>
+                        <div className="flex items-center gap-3">
+                          <Button variant="ghost" onClick={() => openClient(client.id)}>
+                            <ScanSearch className="mr-2 h-4 w-4" />
+                            360
+                          </Button>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => void toggleRouteSelection(selectedRoute.id, client.id, event.target.checked)}
+                            className="h-5 w-5 rounded border-[var(--line)] text-[var(--accent-600)]"
+                          />
+                        </div>
+                      </div>
                     );
                   })
                 ) : (
@@ -245,6 +300,48 @@ export function RoutesPage() {
           ) : (
             <EmptyState title="Nenhuma rota selecionada" description="Escolha uma rota ao lado para editar agenda e marcar clientes do mes." />
           )}
+        </Card>
+
+        <Card className="space-y-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ink-500)]">Cobertura</p>
+            <h2 className="mt-2 text-2xl font-bold text-[var(--ink-900)]">Malha operacional</h2>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+              <p className="font-semibold text-[var(--ink-900)]">Clientes fora da malha</p>
+              <div className="mt-3 space-y-2">
+                {outsideCoverage.slice(0, 6).map((client) => (
+                  <div key={client.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--panel-subtle)] px-3 py-3">
+                    <div>
+                      <p className="font-semibold text-[var(--ink-900)]">{client.nome}</p>
+                      <p className="text-sm text-[var(--ink-600)]">{client.cidade || 'Sem cidade'}</p>
+                    </div>
+                    {selectedRoute ? (
+                      <Button variant="ghost" onClick={() => void assignRouteToClients([client.id], selectedRoute.id)}>
+                        Vincular
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                {outsideCoverage.length === 0 ? <p className="text-sm text-[var(--ink-600)]">Nenhum cliente fora da malha.</p> : null}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+              <p className="font-semibold text-[var(--ink-900)]">Rotas sem cobertura</p>
+              <div className="mt-3 space-y-2">
+                {routesWithoutCoverage.slice(0, 6).map((client) => (
+                  <div key={client.id} className="rounded-2xl bg-[var(--panel-subtle)] px-3 py-3">
+                    <p className="font-semibold text-[var(--ink-900)]">{client.nome}</p>
+                    <p className="text-sm text-[var(--ink-600)]">{client.cidade || 'Sem cidade'}</p>
+                  </div>
+                ))}
+                {routesWithoutCoverage.length === 0 ? <p className="text-sm text-[var(--ink-600)]">Todas as rotas tem clientes vinculados.</p> : null}
+              </div>
+            </div>
+          </div>
         </Card>
       </div>
     </div>

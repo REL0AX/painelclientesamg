@@ -12,20 +12,28 @@ Painel refeito como SPA moderna em React + TypeScript para Firebase Hosting, com
 
 ## O que entrou nesta versao
 
-- Visao 360 do cliente com resumo, comercial, rota, historico, notas, vendas e edicao
+- Visao 360 do cliente com resumo, comercial, rota, timeline, tarefas, notas, vendas e edicao
 - busca global por nome, codigo, CNPJ, telefone, cidade e rota
+- command palette com `Ctrl+K` para navegar, abrir cliente e criar cadastro
+- CRM operacional com estagio, prioridade, tags, canal preferido e proxima acao
+- tela de tarefas com retornos, follow-ups e exportacao CSV
+- tela de campanhas manuais com fila de WhatsApp, preview e exportacao XLSX
+- views salvas e bulk actions na base de clientes
 - tabela comercial mensal separada dos tiers historicos
 - mensagens de WhatsApp com variaveis do painel
 - worklists acionaveis para reativacao, proximidade de tabela, rota e qualidade de cadastro
+- importacao com merge policy, preview de duplicidade por `codigo`/`cnpj` e bloqueio de conflitos
+- diagnostico do painel com estado local, sync ledger e saude operacional
 - migracao automatica do legado de `localStorage` para IndexedDB
-- sync com Firebase usando apenas `panelAdmins/<uid>` como autorizacao
-- backups versionados locais e export/import em JSON
+- sync incremental com Firebase usando apenas `panelAdmins/<uid>` como autorizacao
+- backups versionados locais com retencao configuravel e export/import em JSON
 
 ## Estrutura
 
 - `src/app`: shell, rotas e store principal
-- `src/features`: dashboard, clientes, rotas, importacoes, produtos, configuracoes e drawer 360
+- `src/features`: dashboard, clientes, rotas, tarefas, campanhas, importacoes, produtos, configuracoes, diagnostico e drawer 360
 - `src/shared`: tipos, libs, calculos comerciais, Firebase, storage e UI base
+- `scripts/check-bundle-budget.mjs`: budget de bundle para o CI
 - `tests`: smoke e regras do Firestore
 
 ## Como rodar
@@ -73,6 +81,7 @@ Para liberar um admin:
 ## GitHub Actions
 
 - `CI`: lint, typecheck, testes, build e smoke
+- `CI`: tambem valida budget de bundle
 - `Preview Deploy`: preview channel em PR
 - `Production Deploy`: deploy de `hosting + firestore rules` no `main`
 

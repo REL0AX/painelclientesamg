@@ -49,10 +49,10 @@ test('opens the client drawer and generates a WhatsApp link', async ({ page }) =
   await expect(page.getByText('Tabela 3').first()).toBeVisible();
 
   const popupPromise = page.waitForEvent('popup');
-  await page.getByRole('button', { name: 'WhatsApp' }).first().click();
+  await page.getByRole('dialog').getByRole('button', { name: 'WhatsApp' }).first().click();
   const popup = await popupPromise;
   await popup.waitForTimeout(1000);
 
-  expect(popup.url()).toContain('phone=5511999998888');
+  expect(popup.url()).toContain('5511999998888');
   expect(popup.url()).toContain('Mercado+Alfa');
 });

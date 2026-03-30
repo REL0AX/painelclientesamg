@@ -37,10 +37,10 @@ export const saveSnapshotToDb = async (snapshot: AppSnapshot) => {
   });
 };
 
-export const createBackupRecord = async (record: BackupRecord) => {
+export const createBackupRecord = async (record: BackupRecord, maxBackups = MAX_BACKUPS) => {
   await panelDb.backups.put(record);
   const allBackups = await panelDb.backups.orderBy('createdAt').reverse().toArray();
-  const staleBackups = allBackups.slice(MAX_BACKUPS);
+  const staleBackups = allBackups.slice(maxBackups);
   if (staleBackups.length > 0) {
     await panelDb.backups.bulkDelete(staleBackups.map((item) => item.id));
   }
