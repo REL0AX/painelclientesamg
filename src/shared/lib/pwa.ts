@@ -48,3 +48,27 @@ export function registerAppServiceWorker() {
     }
   });
 }
+
+async function unregisterServiceWorkers() {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(registrations.map((registration) => registration.unregister()));
+}
+
+async function clearCaches() {
+  if (!('caches' in window)) {
+    return;
+  }
+
+  const cacheKeys = await caches.keys();
+  await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+}
+
+export function activateMaintenanceMode() {
+  window.addEventListener('load', () => {
+    void Promise.allSettled([unregisterServiceWorkers(), clearCaches()]);
+  });
+}

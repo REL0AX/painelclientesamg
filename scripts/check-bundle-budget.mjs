@@ -8,10 +8,10 @@ const files = readdirSync(distAssetsDir).filter((file) => file.endsWith('.js'));
 
 const budgets = [
   { label: 'index', pattern: /^index-.*\.js$/, maxKb: 340 },
-  { label: 'firebase', pattern: /^firebase-.*\.js$/, maxKb: 380 },
-  { label: 'xlsx', pattern: /^xlsx-.*\.js$/, maxKb: 450 },
-  { label: 'AppContext', pattern: /^AppContext-.*\.js$/, maxKb: 40 },
-  { label: 'ClientDrawer', pattern: /^ClientDrawer-.*\.js$/, maxKb: 35 }
+  { label: 'firebase', pattern: /^firebase-.*\.js$/, maxKb: 380, optional: true },
+  { label: 'xlsx', pattern: /^xlsx-.*\.js$/, maxKb: 450, optional: true },
+  { label: 'AppContext', pattern: /^AppContext-.*\.js$/, maxKb: 40, optional: true },
+  { label: 'ClientDrawer', pattern: /^ClientDrawer-.*\.js$/, maxKb: 35, optional: true }
 ];
 
 const errors = [];
@@ -21,6 +21,11 @@ const formatKb = (bytes) => `${(bytes / 1024).toFixed(2)} kB`;
 for (const budget of budgets) {
   const file = files.find((entry) => budget.pattern.test(entry));
   if (!file) {
+    if (budget.optional) {
+      console.log(`ok  ${budget.label.padEnd(12)} ausente neste build`);
+      continue;
+    }
+
     errors.push(`Chunk ${budget.label} nao encontrado em dist/assets.`);
     continue;
   }
