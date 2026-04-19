@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { cloudServicesReady, panelCloudConfig } from '@/shared/lib/cloud-config';
 import { createHistoryEntry } from '@/shared/lib/history';
-import type { ClientImportCandidate } from '@/shared/lib/imports';
+import type { ClientImportCandidate, SalesImportCandidate } from '@/shared/lib/imports';
 import { readLegacySnapshot, readStoredTheme, writeStoredTheme } from '@/shared/lib/legacy';
 import { createEmptySnapshot, normalizeSnapshot, snapshotHasData } from '@/shared/lib/normalize';
 import { decorateClientsWithRoutes, routeDepartureInfo } from '@/shared/lib/routes';
@@ -104,7 +104,7 @@ interface AppContextValue {
     policy?: ImportMergePolicy
   ) => Promise<void>;
   importProducts: (products: AppSnapshot['products'], fileName: string) => Promise<void>;
-  importSales: (rows: Array<{ clientId: string; sale: Sale }>, fileName: string) => Promise<void>;
+  importSales: (rows: SalesImportCandidate[], fileName: string) => Promise<void>;
   loginCloud: (email: string, password: string) => Promise<void>;
   logoutCloud: () => Promise<void>;
   syncNow: (options?: { forceFull?: boolean }) => Promise<void>;
@@ -1232,24 +1232,73 @@ export function AppProvider({ children }: PropsWithChildren) {
     );
   };
 
-  const importSales = async (rows: Array<{ clientId: string; sale: Sale }>, fileName: string) => {
+  const importSales = async (rows: SalesImportCandidate[], fileName: string) => {
     const { createImportHistoryEntry } = await loadImportsModule();
     await mutateSnapshot(
       (draft) => {
-        rows.forEach(({ clientId, sale }) => {
-          const client = draft.clients.find((entry) => entry.id === clientId);
+        const createdClientIds = new Set<string>();
+        let createdClients = 0;
+        let importedSales = 0;
+
+        rows.forEach(({ clientId, sale, createdClient }) => {
+          let client = draft.clients.find((entry) => entry.id === clientId);
+          if (!client && createdClient) {
+            draft.clients.unshift(createdClient);
+            createdClientIds.add(createdClient.id);
+            createdClients += 1;
+            client = draft.clients.find((entry) => entry.id === clientId);
+          }
+
           if (!client) {
             return;
           }
 
-          if (!client.compras.some((entry) => entry.id === sale.id)) {
+          const saleFingerprint = `${client.id}::${sale.pedido.trim().toUpperCase()}::${new Date(sale.data)
+            .toISOString()
+            .slice(0, 10)}::${sale.valor.toFixed(2)}`;
+          const existingFingerprints = new Set(
+            client.compras.map(
+              (entry) =>
+                `${client.id}::${entry.pedido.trim().toUpperCase()}::${new Date(entry.data)
+                  .toISOString()
+                  .slice(0, 10)}::${entry.valor.toFixed(2)}`
+            )
+          );
+
+          if (!existingFingerprints.has(saleFingerprint)) {
             client.compras.unshift(sale);
             client.totalCompras = client.compras.reduce((total, entry) => total + entry.valor, 0);
+            importedSales += 1;
           }
         });
 
+        if (createdClientIds.size > 0) {
+          draft.clients
+            .filter((client) => createdClientIds.has(client.id))
+            .forEach((client) => {
+              draft.history.unshift(
+                createHistoryEntry(
+                  'clients',
+                  `Cliente ${client.nome} criado automaticamente a partir da importacao de vendas.`,
+                  {
+                    clientId: client.id,
+                    entityId: client.id,
+                    entityKind: 'client',
+                    metadata: {
+                      source: 'sales-import',
+                      fileName
+                    }
+                  }
+                )
+              );
+            });
+        }
+
         draft.history.unshift(
-          createImportHistoryEntry('sales', `${rows.length} vendas importadas de ${fileName}.`)
+          createImportHistoryEntry(
+            'sales',
+            `${importedSales} vendas importadas de ${fileName}.${createdClients > 0 ? ` ${createdClients} clientes criados automaticamente.` : ''}`
+          )
         );
       },
       {

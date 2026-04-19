@@ -38,9 +38,18 @@ export function ImportsPage() {
       new: rows.filter((row) => row.matchType === 'new').length,
       codigo: rows.filter((row) => row.matchType === 'codigo').length,
       cnpj: rows.filter((row) => row.matchType === 'cnpj').length,
+      nome: rows.filter((row) => row.matchType === 'nome').length,
       multiple: rows.filter((row) => row.matchType === 'multiple').length
     };
   }, [sections.clients.preview?.validRows]);
+
+  const salesPreviewStats = useMemo(() => {
+    const rows = sections.sales.preview?.validRows ?? [];
+    return {
+      existing: rows.filter((row) => row.matchType === 'existing').length,
+      created: rows.filter((row) => row.matchType === 'created').length
+    };
+  }, [sections.sales.preview?.validRows]);
 
   const handleFile = async (kind: ImportSectionKey, file: File | undefined) => {
     if (!file) return;
@@ -173,7 +182,19 @@ export function ImportsPage() {
                       <div className="rounded-2xl bg-[var(--panel-subtle)] p-3 text-[var(--ink-700)]">Novos: {clientPreviewStats.new}</div>
                       <div className="rounded-2xl bg-[var(--panel-subtle)] p-3 text-[var(--ink-700)]">Match codigo: {clientPreviewStats.codigo}</div>
                       <div className="rounded-2xl bg-[var(--panel-subtle)] p-3 text-[var(--ink-700)]">Match CNPJ: {clientPreviewStats.cnpj}</div>
+                      <div className="rounded-2xl bg-[var(--panel-subtle)] p-3 text-[var(--ink-700)]">Match nome: {clientPreviewStats.nome}</div>
                       <div className="rounded-2xl bg-[var(--panel-subtle)] p-3 text-[var(--ink-700)]">Bloqueados: {clientPreviewStats.multiple}</div>
+                    </div>
+                  ) : null}
+
+                  {section.key === 'sales' ? (
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-2xl bg-[var(--panel-subtle)] p-3 text-[var(--ink-700)]">
+                        Clientes encontrados: {salesPreviewStats.existing}
+                      </div>
+                      <div className="rounded-2xl bg-[var(--panel-subtle)] p-3 text-[var(--ink-700)]">
+                        Clientes criados via venda: {salesPreviewStats.created}
+                      </div>
                     </div>
                   ) : null}
 

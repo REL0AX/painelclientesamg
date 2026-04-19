@@ -25,8 +25,15 @@ export interface ImportPreviewResult<T> {
 
 export interface ClientImportCandidate {
   client: Client;
-  matchType: 'new' | 'codigo' | 'cnpj' | 'multiple';
+  matchType: 'new' | 'codigo' | 'cnpj' | 'nome' | 'multiple';
   matchedClientIds: string[];
+}
+
+export interface SalesImportCandidate {
+  clientId: string;
+  sale: Sale;
+  createdClient?: Client;
+  matchType: 'existing' | 'created';
 }
 
 const normalizeKeys = (row: Record<string, unknown>) =>
@@ -44,6 +51,28 @@ const findValue = (row: Record<string, unknown>, keys: string[]) => {
   return undefined;
 };
 
+const buildAutoCreatedClient = (
+  row: Record<string, unknown>,
+  razaoSocial: string,
+  cnpj: string,
+  sequence: number
+) =>
+  normalizeClient({
+    id: createId('client'),
+    codigo: cnpj ? `AUTO-${cnpj.slice(-8)}` : `AUTO-${String(sequence).padStart(4, '0')}`,
+    nome: razaoSocial,
+    cnpj,
+    cidade: String(findValue(row, ['cidade']) ?? '').trim(),
+    uf: String(findValue(row, ['uf', 'estado']) ?? '').trim(),
+    telefone1: String(findValue(row, ['telefone 1', 'telefone', 'fone 1']) ?? '').trim(),
+    telefone2: String(findValue(row, ['telefone 2', 'fone 2']) ?? '').trim(),
+    email: String(findValue(row, ['email', 'e-mail']) ?? '').trim(),
+    compras: [],
+    notes: [],
+    contacts: [],
+    tags: ['criado-via-venda']
+  });
+
 export const readSpreadsheet = async (file: File) => {
   const data = await file.arrayBuffer();
   const workbook = XLSX.read(data, { cellDates: true });
@@ -56,6 +85,7 @@ export const previewClientImport = (
   snapshot: AppSnapshot
 ): ImportPreviewResult<ClientImportCandidate> => {
   const codeMap = new Map(snapshot.clients.map((client) => [normalizeForSearch(client.codigo), client.id]));
+  const nameMap = new Map(snapshot.clients.map((client) => [normalizeForSearch(client.nome), client.id]));
   const cnpjMap = new Map(
     snapshot.clients.filter((client) => client.cnpj).map((client) => [normalizeDigits(client.cnpj), client.id])
   );
@@ -80,7 +110,8 @@ export const previewClientImport = (
     const cnpj = normalizeDigits(String(findValue(normalized, ['cnpj', 'documento']) ?? ''));
     const byCode = codeMap.get(normalizeForSearch(codigo));
     const byCnpj = cnpj ? cnpjMap.get(cnpj) : undefined;
-    const matchedClientIds = [...new Set([byCode, byCnpj].filter(Boolean) as string[])];
+    const byName = nameMap.get(normalizeForSearch(nome));
+    const matchedClientIds = [...new Set([byCode, byCnpj, byName].filter(Boolean) as string[])];
 
     validRows.push({
       client: normalizeClient({
@@ -103,7 +134,9 @@ export const previewClientImport = (
           : matchedClientIds.length === 1
             ? byCode
               ? 'codigo'
-              : 'cnpj'
+              : byCnpj
+                ? 'cnpj'
+                : 'nome'
             : 'new',
       matchedClientIds
     });
@@ -229,8 +262,8 @@ const saleFingerprint = (clientId: string, sale: Pick<Sale, 'pedido' | 'data' | 
 export const previewSalesImport = (
   rows: Record<string, unknown>[],
   snapshot: AppSnapshot
-): ImportPreviewResult<{ clientId: string; sale: Sale }> => {
-  const validRows: Array<{ clientId: string; sale: Sale }> = [];
+): ImportPreviewResult<SalesImportCandidate> => {
+  const validRows: SalesImportCandidate[] = [];
   const errors: string[] = [];
   const clientNameMap = new Map(snapshot.clients.map((client) => [normalizeForSearch(client.nome), client.id]));
   const clientCnpjMap = new Map(
@@ -242,23 +275,31 @@ export const previewSalesImport = (
       client.compras.map((sale) => saleFingerprint(client.id, sale))
     )
   );
+  const stagedClients = new Map<string, Client>();
 
   rows.forEach((row, index) => {
     const normalized = normalizeKeys(row);
     const razaoSocial = String(
       findValue(normalized, ['nome do cliente', 'razao social', 'razão social', 'cliente']) ?? ''
     ).trim();
-    const cnpj = normalizeDigits(String(findValue(normalized, ['cnpj', 'cpf/cnpj', 'documento']) ?? ''));
+    const cnpj = normalizeDigits(
+      String(findValue(normalized, ['cnpj', 'cpf/cnpj', 'cnpj / cpf', 'documento']) ?? '')
+    );
     const valor = parseCurrency(findValue(normalized, ['vl total', 'valor total', 'valor', 'total']) ?? 0);
     const dateValue = parseDateFromExcel(
-      findValue(normalized, ['data', 'data de emissao', 'data emissão', 'data nf'])
+      findValue(normalized, ['data', 'data saida', 'data saída', 'data de emissao', 'data emissão', 'data nf'])
     );
     const sku = normalizeForSearch(String(findValue(normalized, ['sku', 'codigo produto', 'cód. produto']) ?? ''));
     const quantity = Number(findValue(normalized, ['qtde', 'quantidade']) ?? 1);
 
-    const clientId = cnpj ? clientCnpjMap.get(cnpj) : clientNameMap.get(normalizeForSearch(razaoSocial));
-    if (!clientId) {
-      errors.push(`Linha ${index + 2}: cliente nao encontrado para ${razaoSocial || cnpj || 'registro'}.`);
+    const normalizedClientName = normalizeForSearch(razaoSocial);
+    let clientId = cnpj ? clientCnpjMap.get(cnpj) : undefined;
+    if (!clientId && normalizedClientName) {
+      clientId = clientNameMap.get(normalizedClientName);
+    }
+
+    if (!clientId && !normalizedClientName && !cnpj) {
+      errors.push(`Linha ${index + 2}: cliente nao encontrado para registro sem nome e sem documento.`);
       return;
     }
 
@@ -267,10 +308,30 @@ export const previewSalesImport = (
       return;
     }
 
+    let createdClient: Client | undefined;
+    if (!clientId) {
+      const stagedKey = cnpj || normalizedClientName;
+      createdClient = stagedClients.get(stagedKey);
+
+      if (!createdClient) {
+        createdClient = buildAutoCreatedClient(normalized, razaoSocial, cnpj, stagedClients.size + 1);
+        stagedClients.set(stagedKey, createdClient);
+        clientNameMap.set(normalizeForSearch(createdClient.nome), createdClient.id);
+        if (createdClient.cnpj) {
+          clientCnpjMap.set(createdClient.cnpj, createdClient.id);
+        }
+      }
+
+      clientId = createdClient.id;
+    }
+
     const sale: Sale = {
       id: createId('sale'),
       pedido: String(findValue(normalized, ['pedido']) ?? ''),
-      descricao: String(findValue(normalized, ['docum', 'documento', 'nf-e', 'nota fiscal']) ?? ''),
+      descricao: String(
+        findValue(normalized, ['docum', 'documento', 'nf-e', 'nf-e / pre fatura', 'nf-e / pré fatura', 'nota fiscal']) ??
+          ''
+      ),
       tipoVenda: String(findValue(normalized, ['tipo de venda']) ?? ''),
       portador: String(findValue(normalized, ['nome do portador']) ?? ''),
       data: dateValue.toISOString(),
@@ -294,7 +355,12 @@ export const previewSalesImport = (
     }
 
     existingFingerprints.add(fingerprint);
-    validRows.push({ clientId, sale });
+    validRows.push({
+      clientId,
+      sale,
+      createdClient,
+      matchType: createdClient ? 'created' : 'existing'
+    });
   });
 
   return { validRows, errors, totalRows: rows.length };

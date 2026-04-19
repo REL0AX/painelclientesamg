@@ -33,6 +33,7 @@ export const normalizeForSearch = (value: string) =>
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase()
+    .replace(/\s+/g, ' ')
     .trim();
 
 export const normalizeDigits = (value: string) => value.replace(/\D/g, '');
@@ -54,10 +55,34 @@ export const parseDateFromExcel = (value: unknown) => {
   }
 
   if (typeof value === 'string') {
-    const asDate = new Date(value);
+    const normalized = value.trim().replace(/\s+/g, ' ');
+    if (!normalized) {
+      return null;
+    }
+
+    const brDateMatch = normalized.match(
+      /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    );
+    if (brDateMatch) {
+      const [, dayText, monthText, yearText, hourText = '0', minuteText = '0', secondText = '0'] =
+        brDateMatch;
+      const day = Number(dayText);
+      const month = Number(monthText);
+      const year = Number(yearText);
+      const hour = Number(hourText);
+      const minute = Number(minuteText);
+      const second = Number(secondText);
+      const date = new Date(year, month - 1, day, hour, minute, second);
+
+      if (!Number.isNaN(date.getTime())) {
+        return date;
+      }
+    }
+
+    const asDate = new Date(normalized);
     if (!Number.isNaN(asDate.getTime())) return asDate;
 
-    const [day, month, year] = value.split(/[/-]/).map(Number);
+    const [day, month, year] = normalized.split(/[/-]/).map(Number);
     if (day && month && year) {
       return new Date(year, month - 1, day);
     }
