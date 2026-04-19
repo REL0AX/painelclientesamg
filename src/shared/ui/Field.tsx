@@ -10,7 +10,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        'w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none transition placeholder:text-[var(--ink-400)] focus:border-[var(--accent-400)] focus:ring-2 focus:ring-orange-200',
+        'w-full rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none transition placeholder:text-[var(--ink-400)] focus:border-[var(--accent-400)] focus:ring-2 focus:ring-orange-200',
         props.className
       )}
     />
@@ -22,7 +22,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={cn(
-        'w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none transition focus:border-[var(--accent-400)] focus:ring-2 focus:ring-orange-200',
+        'w-full rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none transition focus:border-[var(--accent-400)] focus:ring-2 focus:ring-orange-200',
         props.className
       )}
     />
@@ -34,7 +34,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
     <textarea
       {...props}
       className={cn(
-        'w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none transition placeholder:text-[var(--ink-400)] focus:border-[var(--accent-400)] focus:ring-2 focus:ring-orange-200',
+        'w-full rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none transition placeholder:text-[var(--ink-400)] focus:border-[var(--accent-400)] focus:ring-2 focus:ring-orange-200',
         props.className
       )}
     />

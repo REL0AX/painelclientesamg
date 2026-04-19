@@ -70,6 +70,9 @@ export function AppShell() {
   } = useAppContext();
 
   const years = Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - index);
+  const monthLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const currentScopeLabel = selectedMonth === null ? `Ano inteiro ${selectedYear}` : `${monthLabels[selectedMonth]}/${selectedYear}`;
+  const savedClientViews = snapshot.savedViews.filter((view) => view.scope === 'clients').length;
 
   return (
     <div className="page-shell">
@@ -141,6 +144,24 @@ export function AppShell() {
               </Badge>
             </div>
           </div>
+
+          <div className="mt-6 rounded-[24px] border border-[var(--line)] bg-[var(--panel-subtle)] p-4">
+            <p className="text-sm font-semibold text-[var(--ink-900)]">Recorte atual</p>
+            <div className="mt-3 space-y-2 text-sm text-[var(--ink-700)]">
+              <div className="flex items-center justify-between gap-3">
+                <span>Periodo</span>
+                <span className="font-semibold text-[var(--ink-900)]">{currentScopeLabel}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Clientes na base</span>
+                <span className="font-semibold text-[var(--ink-900)]">{snapshot.clients.length}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Views salvas</span>
+                <span className="font-semibold text-[var(--ink-900)]">{savedClientViews}</span>
+              </div>
+            </div>
+          </div>
         </aside>
 
         <main className="space-y-6 py-1">
@@ -161,7 +182,7 @@ export function AppShell() {
                   <select
                     value={selectedYear}
                     onChange={(event) => setSelectedYear(Number(event.target.value))}
-                    className="rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none"
+                    className="rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none"
                   >
                     {years.map((year) => (
                       <option key={year} value={year}>
@@ -174,16 +195,14 @@ export function AppShell() {
                     onChange={(event) =>
                       setSelectedMonth(event.target.value === 'all' ? null : Number(event.target.value))
                     }
-                    className="rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none"
+                    className="rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5 text-sm text-[var(--ink-900)] shadow-sm outline-none"
                   >
                     <option value="all">Ano inteiro</option>
-                    {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(
-                      (label, index) => (
-                        <option key={label} value={index}>
-                          {label}
-                        </option>
-                      )
-                    )}
+                    {monthLabels.map((label, index) => (
+                      <option key={label} value={index}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

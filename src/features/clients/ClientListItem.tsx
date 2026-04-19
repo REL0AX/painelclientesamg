@@ -3,7 +3,8 @@ import { useAppContext } from '@/app/state/AppContext';
 import { clientSignals } from '@/shared/lib/analytics';
 import { commercialProfileForClient } from '@/shared/lib/commercial';
 import { routeDepartureInfo } from '@/shared/lib/routes';
-import { formatCurrency } from '@/shared/lib/utils';
+import { formatCurrency, formatDate } from '@/shared/lib/utils';
+import { latestSaleDate, normalizeClientPhone } from '@/shared/lib/whatsapp';
 import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
@@ -37,6 +38,8 @@ export function ClientListItem({
   const defaultTemplate =
     snapshot.settings.whatsappTemplates.find((template) => template.id === 'progress') ??
     snapshot.settings.whatsappTemplates[0];
+  const phone = normalizeClientPhone(client);
+  const lastPurchase = latestSaleDate(client);
 
   return (
     <Card className={selected ? 'border-[var(--accent-400)] shadow-[0_24px_90px_rgba(249,115,22,0.12)]' : ''}>
@@ -69,6 +72,14 @@ export function ClientListItem({
             <p className="text-xs uppercase tracking-[0.22em] text-[var(--ink-500)]">
               {client.route?.name ?? 'Sem rota'} {routeDates?.departure ? `• saida ${routeDates.departure}` : ''}
             </p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--ink-500)]">
+              <span className="rounded-full bg-[var(--panel-subtle)] px-3 py-1">
+                {phone.isValid ? `WhatsApp ${phone.digits}` : 'WhatsApp indisponivel'}
+              </span>
+              <span className="rounded-full bg-[var(--panel-subtle)] px-3 py-1">
+                {lastPurchase ? `Ultima compra ${formatDate(lastPurchase)}` : 'Sem historico de compra'}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge tone={profile.missingToNext > 0 ? 'info' : 'success'}>{profile.currentBracket.label}</Badge>
@@ -118,11 +129,16 @@ export function ClientListItem({
             <ScanSearch className="mr-2 h-4 w-4" />
             Abrir 360
           </Button>
-          <Button variant="secondary" onClick={() => openClient(client.id)}>
+          <Button variant="ghost" onClick={() => openClient(client.id)}>
             <PenSquare className="mr-2 h-4 w-4" />
             Editar
           </Button>
-          <Button variant="secondary" onClick={() => defaultTemplate && void openWhatsApp(client.id, defaultTemplate)}>
+          <Button
+            variant="secondary"
+            onClick={() => defaultTemplate && void openWhatsApp(client.id, defaultTemplate)}
+            disabled={!phone.isValid}
+            title={phone.reason ?? undefined}
+          >
             <MessageCircle className="mr-2 h-4 w-4" />
             WhatsApp
           </Button>
@@ -135,7 +151,7 @@ export function ClientListItem({
           {!compact ? (
             <Button variant="ghost" onClick={() => openClient(client.id)}>
               <RouteIcon className="mr-2 h-4 w-4" />
-              Ir para rota
+              {client.route?.id ? 'Ver rota' : 'Definir rota'}
             </Button>
           ) : null}
         </div>

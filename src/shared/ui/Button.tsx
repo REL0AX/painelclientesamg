@@ -10,11 +10,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-[var(--accent-600)] text-white shadow-lg shadow-orange-500/20 hover:bg-[var(--accent-500)]',
+    'bg-[var(--accent-600)] text-white shadow-lg shadow-orange-500/20 hover:bg-[var(--accent-500)] focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
   secondary:
-    'border border-[var(--line)] bg-white/80 text-[var(--ink-900)] hover:border-[var(--accent-400)] hover:bg-white',
-  ghost: 'text-[var(--ink-700)] hover:bg-[var(--panel-subtle)]',
-  danger: 'bg-red-600 text-white hover:bg-red-500'
+    'border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--ink-900)] hover:border-[var(--accent-400)] hover:bg-[var(--surface)] focus-visible:ring-2 focus-visible:ring-orange-300 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
+  ghost:
+    'text-[var(--ink-700)] hover:bg-[var(--panel-subtle)] focus-visible:ring-2 focus-visible:ring-orange-200 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
+  danger:
+    'bg-red-600 text-white hover:bg-red-500 focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
 };
 
 export function Button({

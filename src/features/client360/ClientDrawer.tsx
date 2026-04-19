@@ -8,6 +8,7 @@ import { commercialProfileForClient } from '@/shared/lib/commercial';
 import { deriveClientTimeline } from '@/shared/lib/history';
 import { routeDepartureInfo } from '@/shared/lib/routes';
 import { createId, formatCurrency, formatDate, formatDateTime } from '@/shared/lib/utils';
+import { latestSaleDate, normalizeClientPhone } from '@/shared/lib/whatsapp';
 import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { FieldLabel, Input, Select, Textarea } from '@/shared/ui/Field';
@@ -145,6 +146,29 @@ export function ClientDrawer() {
     snapshot.settings.whatsappTemplates.find((template) => template.id === 'progress') ??
     snapshot.settings.whatsappTemplates[0];
   const timeline = deriveClientTimeline(snapshot, client);
+  const phone = normalizeClientPhone(client);
+  const lastPurchase = latestSaleDate(client);
+  const nearNextTableThreshold = snapshot.settings.thresholds.nearNextTable;
+  const operationalAlerts = [
+    !phone.isValid
+      ? {
+          title: 'WhatsApp indisponivel',
+          detail: 'Preencha um telefone valido para liberar mensagem direta e campanhas.'
+        }
+      : null,
+    !client.route?.id
+      ? {
+          title: 'Cliente sem rota',
+          detail: 'Defina uma rota manual ou ajuste a cidade para encaixar este cliente na operacao.'
+        }
+      : null,
+    profile.nextBracket && profile.missingToNext > 0 && profile.missingToNext <= nearNextTableThreshold
+      ? {
+          title: 'Oportunidade comercial',
+          detail: `Faltam ${formatCurrency(profile.missingToNext)} para subir para ${profile.nextBracket.label}.`
+        }
+      : null
+  ].filter(Boolean) as Array<{ title: string; detail: string }>;
 
   const handleSaveTask = async () => {
     if (!taskForm.title.trim()) {
@@ -169,7 +193,7 @@ export function ClientDrawer() {
     <Dialog.Root open={Boolean(selectedClientId)} onOpenChange={(nextOpen) => !nextOpen && openClient(null)}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm" />
-        <Dialog.Content className="fixed right-0 top-0 z-50 h-screen w-full max-w-3xl overflow-y-auto border-l border-white/10 bg-[#fffaf4]/96 p-5 shadow-2xl outline-none backdrop-blur xl:max-w-4xl">
+        <Dialog.Content className="fixed right-0 top-0 z-50 h-screen w-full max-w-3xl overflow-y-auto border-l border-[var(--line)] bg-[var(--drawer)] p-5 shadow-2xl outline-none backdrop-blur xl:max-w-4xl">
           <div className="flex items-start justify-between gap-4">
             <div>
               <Dialog.Title className="text-3xl font-bold text-[var(--ink-900)]">{client.nome || 'Novo cliente'}</Dialog.Title>
@@ -204,7 +228,12 @@ export function ClientDrawer() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button variant="secondary" onClick={() => progressTemplate && void openWhatsApp(client.id, progressTemplate)}>
+            <Button
+              variant="secondary"
+              onClick={() => progressTemplate && void openWhatsApp(client.id, progressTemplate)}
+              disabled={!phone.isValid}
+              title={phone.reason ?? undefined}
+            >
               <MessageCircle className="mr-2 h-4 w-4" />
               WhatsApp
             </Button>
@@ -233,8 +262,44 @@ export function ClientDrawer() {
             </p>
           ) : null}
 
+          <section className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Contato</p>
+              <p className="mt-2 text-lg font-bold text-[var(--ink-900)]">{phone.isValid ? phone.digits : 'Sem telefone valido'}</p>
+              <p className="mt-2 text-sm text-[var(--ink-600)]">{client.preferredChannel}</p>
+            </div>
+            <div className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Ultima compra</p>
+              <p className="mt-2 text-lg font-bold text-[var(--ink-900)]">{lastPurchase ? formatDate(lastPurchase) : 'Sem historico'}</p>
+              <p className="mt-2 text-sm text-[var(--ink-600)]">{client.compras.length} vendas registradas</p>
+            </div>
+            <div className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Comercial</p>
+              <p className="mt-2 text-lg font-bold text-[var(--ink-900)]">{formatCurrency(profile.revenue)}</p>
+              <p className="mt-2 text-sm text-[var(--ink-600)]">{profile.currentBracket.label}</p>
+            </div>
+            <div className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Rota</p>
+              <p className="mt-2 text-lg font-bold text-[var(--ink-900)]">{client.route?.name ?? 'Sem rota'}</p>
+              <p className="mt-2 text-sm text-[var(--ink-600)]">
+                {routeDates?.departure ? `Saida ${formatDate(routeDates.departure)}` : 'Sem agenda definida'}
+              </p>
+            </div>
+          </section>
+
+          {operationalAlerts.length > 0 ? (
+            <section className="mt-4 grid gap-3 md:grid-cols-2">
+              {operationalAlerts.map((alert) => (
+                <div key={alert.title} className="rounded-[24px] border border-dashed border-[var(--line)] bg-[var(--panel-subtle)] p-4">
+                  <p className="font-semibold text-[var(--ink-900)]">{alert.title}</p>
+                  <p className="mt-1 text-sm text-[var(--ink-700)]">{alert.detail}</p>
+                </div>
+              ))}
+            </section>
+          ) : null}
+
           <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="mt-8">
-            <Tabs.List className="hide-scrollbar flex gap-2 overflow-x-auto rounded-[24px] border border-[var(--line)] bg-white p-2">
+            <Tabs.List className="hide-scrollbar sticky top-0 z-10 flex gap-2 overflow-x-auto rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-2 shadow-sm">
               {[
                 ['resumo', 'Resumo'],
                 ['comercial', 'Comercial'],
@@ -257,21 +322,23 @@ export function ClientDrawer() {
 
             <Tabs.Content value="resumo" className="mt-6 space-y-5">
               <section className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Cadastro</p>
                   <div className="mt-4 space-y-3 text-sm text-[var(--ink-700)]">
                     <p>CNPJ: <span className="font-semibold text-[var(--ink-900)]">{client.cnpj || 'Nao informado'}</span></p>
                     <p>Cidade: <span className="font-semibold text-[var(--ink-900)]">{client.cidade || 'Nao informada'}</span></p>
+                    <p>Email: <span className="font-semibold text-[var(--ink-900)]">{client.email || 'Nao informado'}</span></p>
                     <p>Telefone 1: <span className="font-semibold text-[var(--ink-900)]">{client.telefone1 || 'Nao informado'}</span></p>
                     <p>Telefone 2: <span className="font-semibold text-[var(--ink-900)]">{client.telefone2 || 'Nao informado'}</span></p>
                     <p>Canal preferido: <span className="font-semibold text-[var(--ink-900)]">{client.preferredChannel}</span></p>
                   </div>
                 </div>
-                <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Relacionamento</p>
                   <div className="mt-4 space-y-3 text-sm text-[var(--ink-700)]">
                     <p>Total historico: <span className="font-semibold text-[var(--ink-900)]">{formatCurrency(client.totalCompras)}</span></p>
                     <p>Compras: <span className="font-semibold text-[var(--ink-900)]">{client.compras.length}</span></p>
+                    <p>Ultima compra: <span className="font-semibold text-[var(--ink-900)]">{lastPurchase ? formatDate(lastPurchase) : 'Sem historico'}</span></p>
                     <p>Ultimo contato: <span className="font-semibold text-[var(--ink-900)]">{client.contacts[0] ? formatDateTime(client.contacts[0].timestamp) : 'Sem historico'}</span></p>
                     <p>Tarefas em aberto: <span className="font-semibold text-[var(--ink-900)]">{clientTasks.filter((task) => task.status === 'open').length}</span></p>
                   </div>
@@ -281,24 +348,24 @@ export function ClientDrawer() {
 
             <Tabs.Content value="comercial" className="mt-6 space-y-5">
               <section className="grid gap-4 lg:grid-cols-4">
-                <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Mes comercial</p>
                   <p className="mt-3 text-2xl font-bold text-[var(--ink-900)]">{profile.contextLabel}</p>
                   {profile.usedFallbackMonth ? (
                     <p className="mt-2 text-sm text-[var(--ink-600)]">Modo ano inteiro: usando o mes atual para comunicacao comercial.</p>
                   ) : null}
                 </div>
-                <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Acumulado</p>
                   <p className="mt-3 text-2xl font-bold text-[var(--ink-900)]">{formatCurrency(profile.revenue)}</p>
                   <p className="mt-2 text-sm text-[var(--ink-600)]">No mes anterior: {formatCurrency(profile.previousRevenue)}</p>
                 </div>
-                <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Faixa</p>
                   <p className="mt-3 text-2xl font-bold text-[var(--ink-900)]">{profile.currentBracket.label}</p>
                   <p className="mt-2 text-sm text-[var(--ink-600)]">Movimento: {profile.bracketMovement}</p>
                 </div>
-                <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+                <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-500)]">Proxima faixa</p>
                   <p className="mt-3 text-2xl font-bold text-[var(--ink-900)]">{profile.nextBracket?.label ?? 'Faixa maxima'}</p>
                   <p className="mt-2 text-sm text-[var(--ink-600)]">
@@ -309,7 +376,7 @@ export function ClientDrawer() {
             </Tabs.Content>
 
             <Tabs.Content value="rota" className="mt-6 space-y-5">
-              <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+              <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                 <div className="flex items-center gap-2">
                   <RouteIcon className="h-4 w-4 text-[var(--accent-600)]" />
                   <p className="text-lg font-semibold text-[var(--ink-900)]">{client.route?.name ?? 'Sem rota'}</p>
@@ -332,7 +399,7 @@ export function ClientDrawer() {
             </Tabs.Content>
 
             <Tabs.Content value="timeline" className="mt-6 space-y-5">
-              <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+              <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                 <h3 className="text-lg font-semibold text-[var(--ink-900)]">Registrar contato</h3>
                 <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr_auto]">
                   <Select value={contactType} onChange={(event) => setContactType(event.target.value as typeof contactType)}>
@@ -357,7 +424,7 @@ export function ClientDrawer() {
               <div className="space-y-3">
                 {timeline.length > 0 ? (
                   timeline.map((event) => (
-                    <div key={event.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+                    <div key={event.id} className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
                       <div className="flex items-center justify-between gap-3">
                         <Badge tone={event.tone}>{event.type}</Badge>
                         <p className="text-xs text-[var(--ink-500)]">{formatDateTime(event.timestamp)}</p>
@@ -375,7 +442,7 @@ export function ClientDrawer() {
             </Tabs.Content>
 
             <Tabs.Content value="tarefas" className="mt-6 space-y-5">
-              <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+              <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                 <h3 className="text-lg font-semibold text-[var(--ink-900)]">Nova tarefa</h3>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <Input value={taskForm.title} onChange={(event) => setTaskForm((current) => ({ ...current, title: event.target.value }))} placeholder="Titulo da tarefa" />
@@ -409,7 +476,7 @@ export function ClientDrawer() {
               <div className="space-y-3">
                 {clientTasks.length > 0 ? (
                   clientTasks.map((task) => (
-                    <div key={task.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+                    <div key={task.id} className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-[var(--ink-900)]">{task.title}</p>
@@ -450,7 +517,7 @@ export function ClientDrawer() {
             </Tabs.Content>
 
             <Tabs.Content value="notas" className="mt-6 space-y-5">
-              <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+              <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                 <FieldLabel>Nova anotacao</FieldLabel>
                 <Textarea rows={4} value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Sinalize detalhes importantes do cliente, combinados, objeções ou pendencias." />
                 <div className="mt-3">
@@ -467,7 +534,7 @@ export function ClientDrawer() {
               <div className="space-y-3">
                 {client.notes.length > 0 ? (
                   client.notes.map((note) => (
-                    <div key={note.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+                    <div key={note.id} className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
                       <p className="text-xs uppercase tracking-[0.18em] text-[var(--ink-500)]">{formatDateTime(note.timestamp)}</p>
                       <p className="mt-3 text-sm text-[var(--ink-700)]">{note.text}</p>
                     </div>
@@ -481,7 +548,7 @@ export function ClientDrawer() {
             </Tabs.Content>
 
             <Tabs.Content value="vendas" className="mt-6 space-y-5">
-              <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+              <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                 <h3 className="text-lg font-semibold text-[var(--ink-900)]">Nova venda</h3>
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <Input placeholder="Pedido" value={saleForm.pedido} onChange={(event) => setSaleForm((current) => ({ ...current, pedido: event.target.value }))} />
@@ -517,7 +584,7 @@ export function ClientDrawer() {
               <div className="space-y-3">
                 {client.compras.length > 0 ? (
                   client.compras.map((sale) => (
-                    <div key={sale.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4">
+                    <div key={sale.id} className="rounded-[24px] border border-[var(--line)] bg-[var(--surface-strong)] p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-[var(--ink-900)]">{sale.pedido || 'Sem pedido'} • {formatCurrency(sale.valor)}</p>
@@ -539,7 +606,7 @@ export function ClientDrawer() {
             </Tabs.Content>
 
             <Tabs.Content value="edicao" className="mt-6 space-y-5">
-              <div className="rounded-[28px] border border-[var(--line)] bg-white p-5">
+              <div className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <FieldLabel>Nome</FieldLabel>
