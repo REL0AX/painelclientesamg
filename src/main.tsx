@@ -1,13 +1,21 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MaintenancePage } from '@/maintenance/MaintenancePage';
-import { activateMaintenanceMode } from '@/shared/lib/pwa';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { App } from '@/app/App';
+import { AppProvider } from '@/app/state/AppContext';
+import { registerAppServiceWorker } from '@/shared/lib/pwa';
 import '@/styles.css';
 
-activateMaintenanceMode();
+const queryClient = new QueryClient();
+
+registerAppServiceWorker();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <MaintenancePage />
+    <QueryClientProvider client={queryClient}>
+      <AppProvider>
+        <App />
+      </AppProvider>
+    </QueryClientProvider>
   </StrictMode>
 );
