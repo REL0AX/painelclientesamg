@@ -42,4 +42,6 @@ Use os scripts existentes e documente qualquer indisponibilidade. Não reduza ga
 
 ## Git e entrega
 
+O check canônico é `CRM CI`. Publicação de produção exige workflow manual e `CRM_DEPLOY_ENABLED=true`; preview exige `CRM_PREVIEW_DEPLOY_ENABLED=true`. Ambos permanecem desativados por padrão até reconciliar o acesso ao projeto Google Cloud e migrar o deploy para WIF. Não habilitar esses controles nem criar chave JSON para contornar ausência de acesso.
+
 Branch, PR, checks verdes e deploy aprovado. Migração, Rules, Auth, PWA, IndexedDB, scripts e workflow exigem revisão explícita. Não publicar a partir de fork/protótipo.

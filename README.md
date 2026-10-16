@@ -70,7 +70,7 @@ Observacao:
 - projeto: `painelclientesamg`
 - hosting: `painelclientesamg`
 - auth: `email/password`
-- regras: [firestore.rules](/C:/Projetos/Painel%20Clientes/firestore.rules)
+- regras: [firestore.rules](firestore.rules)
 
 Para liberar um admin:
 
@@ -88,6 +88,6 @@ Para liberar um admin:
 
 Em 16/10/2026 os dois controles de publicação estavam ausentes nas variáveis do repositório e permanecem desativados por padrão. O check canônico de qualidade é `CRM CI`, distinto do job de qualidade da publicação.
 
-A publicação ainda usa o secret existente `FIREBASE_SERVICE_ACCOUNT`; nenhuma chave nova foi criada. A migração para WIF depende de acesso administrativo ao projeto `painelclientesamg`: a identidade Google Cloud usada na preparação recebeu `PERMISSION_DENIED` ao consultar seus metadados. Não habilitar os controles de publicação até reconciliar projeto, identidade, permissões e o fluxo oficial. Os logs do deploy antigo de 25/03/2026 expiraram no GitHub; a causa daquela falha não foi comprovada.
+A publicação ainda usa o secret existente `FIREBASE_SERVICE_ACCOUNT`; nenhuma chave nova foi criada. A migração para WIF depende de acesso administrativo ao projeto `painelclientesamg`: a identidade Google Cloud usada na preparação recebeu `PERMISSION_DENIED` ao consultar seus metadados. Não habilitar os controles de publicação até reconciliar projeto, identidade, permissões e o fluxo oficial. Os logs do deploy antigo de 13/07/2026 expiraram no GitHub; a causa daquela falha não foi comprovada.
 
-Consulte [docs/operacao.md](/C:/Projetos/Painel%20Clientes/docs/operacao.md) para a rotina de admins, tabela comercial, WhatsApp e backups.
+Consulte [docs/operacao.md](docs/operacao.md) para a rotina de admins, tabela comercial, WhatsApp e backups.
